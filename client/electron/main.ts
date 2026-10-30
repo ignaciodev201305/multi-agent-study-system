@@ -8,7 +8,8 @@ const APP_ORIGIN = `${APP_SCHEME}://bundle`;
 const distDirectory = join(__dirname, '../dist');
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  // corsEnabled permite cargar el worker de Python como módulo bajo este esquema.
+  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 
 const serveBundle = (): void => {

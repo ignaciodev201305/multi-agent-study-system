@@ -4,7 +4,7 @@ export type Theme = 'dark' | 'light';
 export type AppView = 'home' | 'session';
 export type DocumentType = 'rag' | 'study_map';
 export type DocumentProcessingStatus = 'queued' | 'processing' | 'ready' | 'failed';
-export type SidePanelTab = 'board' | 'progress';
+export type SidePanelTab = 'board' | 'progress' | 'python';
 export type ProgressStatus = 'dominado' | 'en_progreso' | 'con_dificultad';
 
 export interface BackendDocument {
@@ -93,6 +93,20 @@ export type BoardPatch =
   | { type: 'board_patch'; content: string; revision: number; op: 'upsert'; block: BoardBlock }
   | { type: 'board_patch'; content: string; revision: number; op: 'remove'; block_id: string }
   | { type: 'board_patch'; content: string; revision: number; op: 'clear' };
+
+export interface ComposerDraft {
+  sessionId: string;
+  content: string;
+}
+
+export interface PythonWorkerRequest {
+  id: number;
+  code: string;
+}
+
+export type PythonWorkerMessage =
+  | { type: 'started'; id: number }
+  | { type: 'result'; id: number; stdout: string; stderr: string; error: string | null; figures: string[] };
 
 export interface ProgressReview {
   status: ProgressStatus;

@@ -7,10 +7,11 @@ const tableCell = (text: string): string => text.replace(/\|/g, '\\|').replace(/
 
 const tableRow = (cells: string[]): string => `| ${cells.map(tableCell).join(' | ')} |`;
 
-const codeFence = (code: string): string => {
+// La cerca crece si el texto ya contiene una, para que no pueda cerrarse antes de tiempo.
+export const fenced = (language: string, text: string): string => {
   let fence = '```';
-  while (code.includes(fence)) fence += '`';
-  return fence;
+  while (text.includes(fence)) fence += '`';
+  return `${fence}${language}\n${text}\n${fence}`;
 };
 
 const blockMarkdown = (block: BoardBlock): string => {
@@ -32,10 +33,8 @@ const blockMarkdown = (block: BoardBlock): string => {
         tableRow(block.headers.map(() => '---')),
         ...block.rows.map(tableRow),
       ].join('\n');
-    case 'code': {
-      const fence = codeFence(block.code);
-      return `${fence}${block.language}\n${block.code}\n${fence}`;
-    }
+    case 'code':
+      return fenced(block.language, block.code);
     case 'plot': {
       const functions = block.functions
         .map((item) => `- ${item.label ? `${item.label}: ` : ''}\`${item.expression}\``)
