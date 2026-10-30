@@ -1,11 +1,14 @@
 """Proceso aislado de SymPy que lee una operación JSON por stdin y escribe el resultado por stdout."""
 
 import json
+import math
 import re
 import sys
 
 MAX_EXPRESSION_CHARS = 500
 MAX_NAME_CHARS = 20
+SAMPLE_MAX_POINTS = 300
+SAMPLE_MAX_ABS = 1e6
 ALLOWED_CHARS = re.compile(r"[0-9A-Za-z_+\-*/^().,= ]*")
 ALLOWED_FUNCTIONS = {
     "sin", "cos", "tan", "cot", "sec", "csc", "asin", "acos", "atan", "sinh", "cosh", "tanh",
@@ -118,6 +121,37 @@ def _limit(target, symbol, point):
     return left, right
 
 
+def _sample_value(function, x: float) -> float | None:
+    """Evalúa un punto y devuelve None si no es real o supera el recorte."""
+    try:
+        y = float(function(x))
+    except Exception:
+        return None
+    return y if abs(y) <= SAMPLE_MAX_ABS else None
+
+
+def _sample(target, symbol, x_min: float, x_max: float, points: int) -> list[list[float | None]]:
+    """Muestrea la expresión en puntos equiespaciados; None corta la línea."""
+    import sympy
+
+    unknown = target.free_symbols - {symbol}
+    if unknown:
+        raise ValueError(f"Variables sin valor: {sorted(map(str, unknown))}.")
+    if not (math.isfinite(x_min) and math.isfinite(x_max) and x_min < x_max):
+        raise ValueError("El intervalo debe ser finito, con x_min menor que x_max.")
+    if not 2 <= points <= SAMPLE_MAX_POINTS:
+        raise ValueError(f"points debe estar entre 2 y {SAMPLE_MAX_POINTS}.")
+    function = sympy.lambdify(symbol, target, modules="math")
+    step = (x_max - x_min) / (points - 1)
+    samples = []
+    for index in range(points):
+        x = x_min + step * index
+        samples.append([x, _sample_value(function, x)])
+    if all(y is None for _, y in samples):
+        raise ValueError("La expresión no tiene valores reales dibujables en el intervalo.")
+    return samples
+
+
 def run(request: dict) -> dict:
     """Ejecuta la operación pedida y devuelve su resultado."""
     import sympy
@@ -153,6 +187,15 @@ def run(request: dict) -> dict:
                 "latex": rf"\text{{No existe: }} {sympy.latex(left)} \text{{ por la izquierda, }} "
                          rf"{sympy.latex(right)} \text{{ por la derecha}}",
             }
+    elif operation == "sample":
+        target = _parse(expression)
+        return {"result": _sample(
+            target,
+            variable or _single_symbol(target),
+            float(request["x_min"]),
+            float(request["x_max"]),
+            int(request["points"]),
+        )}
     elif operation == "solve":
         equations = [_equation(part) for part in expression.split(",")]
         symbols = [variable] if variable else None
