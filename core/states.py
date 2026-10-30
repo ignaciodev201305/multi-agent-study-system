@@ -8,11 +8,6 @@ from langgraph.graph.message import add_messages
 from core.schemas import ContextClassification, StudyPlan
 
 
-def merge_progress(current: dict | None, updates: dict | None) -> dict:
-    """El progreso de un tema se reemplaza por su evaluación más reciente."""
-    return {**(current or {}), **(updates or {})}
-
-
 class ContextStudyState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     classified_context: ContextClassification
@@ -24,7 +19,9 @@ class StudyState(ContextStudyState):
     summary: str
     # Documentos listos de la sesión, cargados al empezar cada turno.
     documents: list[dict]
-    # Progreso del alumno por tema.
-    progress: Annotated[dict, merge_progress]
+    # Progreso guardado de la sesión, cargado al empezar cada turno.
+    progress: list[dict]
+    # Evaluaciones del último turno, pendientes de guardar.
+    progress_updates: list[dict]
     # Pizarra de la sesión como JSON.
     board: dict

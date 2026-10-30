@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -10,10 +11,12 @@ from langchain.messages import AIMessage, HumanMessage
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langgraph.types import Command
 
-from core.graphs import StudyGraph, open_checkpointer
+from core.agents.builder import SupervisorBuilder
+from core.graphs import StudyGraph, compose_session_context, open_checkpointer
 from core.schemas import ContextClassification, StudyPlan
 from core.streaming import execute_astream_graph
 
+NOW = datetime(2026, 1, 10, 12, 0, tzinfo=timezone.utc)
 PLAN = StudyPlan.model_validate({
     "subject": "derivadas",
     "syllabus": ["Definición"],
@@ -29,6 +32,18 @@ APPROVED = ContextClassification(
     previous_level="principiante",
     title_session="Derivadas",
 )
+
+
+def _entry(number, due_at):
+    return {
+        "topic_number": number,
+        "topic": f"Tema {number}",
+        "status": "en_progreso",
+        "box": 0,
+        "due_at": due_at,
+        "updated_at": "2026-01-01T00:00:00+00:00",
+        "reviews": [{"status": "en_progreso", "evidence": "Bien.", "created_at": "2026-01-01T00:00:00+00:00"}],
+    }
 
 
 class _ToolModel(GenericFakeChatModel):
@@ -96,7 +111,7 @@ class StudyGraphTests(unittest.IsolatedAsyncioTestCase):
         supervisor_model = _ToolModel(messages=iter([
             AIMessage(content="", tool_calls=[{
                 "name": "record_progress",
-                "args": {"topic": "Definición", "status": "en_progreso", "evidence": "Saludó."},
+                "args": {"topic_number": 1, "status": "en_progreso", "evidence": "Saludó."},
                 "id": "call-1",
             }]),
             AIMessage(content="Empecemos."),
@@ -106,19 +121,90 @@ class StudyGraphTests(unittest.IsolatedAsyncioTestCase):
         with patch("core.agents.builder.build_model", side_effect=lambda role, **_: models[role]):
             self.study_graph.session._get_or_build_supervisor("t", PLAN)
 
-        state, _ = await self.run_turn({"messages": [HumanMessage(content="hola")], "documents": []})
+        progress = [_entry(1, due_at="2026-01-01T00:00:00+00:00")]
+        state, _ = await self.run_turn({
+            "messages": [HumanMessage(content="hola")],
+            "documents": [],
+            "progress": progress,
+        })
 
         self.assertEqual(state["messages"][-1].content, "Empecemos.")
         self.assertEqual([message.content for message in state["messages"]], ["hola", "Empecemos."])
+        self.assertEqual(state["progress_updates"], [{
+            "topic_number": 1,
+            "topic": "Definición",
+            "status": "en_progreso",
+            "evidence": "Saludó.",
+        }])
         stored = (await self.graph.aget_state(self.config)).values
-        self.assertEqual(stored["progress"]["Definición"]["status"], "en_progreso")
+        self.assertEqual(stored["progress"], progress)
+        self.assertEqual(stored["progress_updates"], state["progress_updates"])
         thinking = [event for event in self.sender.events if event["type"] == "thinking"]
         self.assertIn("Empecemos.", "".join(event["content"] for event in thinking))
+
+    async def test_session_from_previous_format_keeps_working(self):
+        await self.run_context()
+        await self.graph.aupdate_state(self.config, {
+            "progress": {"Definición": {"status": "dominado", "evidence": "Antes."}},
+        })
+        supervisor_model = _ToolModel(messages=iter([AIMessage(content="Seguimos.")]))
+        models = {"supervisor": supervisor_model, "subagent_light": _ToolModel(messages=iter([]))}
+        with patch("core.agents.builder.build_model", side_effect=lambda role, **_: models[role]):
+            self.study_graph.session._get_or_build_supervisor("t", PLAN)
+
+        state, _ = await self.run_turn({
+            "messages": [HumanMessage(content="hola")],
+            "documents": [],
+            "progress": [],
+        })
+
+        self.assertEqual(state["messages"][-1].content, "Seguimos.")
+        self.assertEqual(state["progress"], [])
 
     async def test_delete_thread_clears_state(self):
         await self.run_context()
         await self.graph.checkpointer.adelete_thread("t")
         self.assertEqual((await self.graph.aget_state(self.config)).values, {})
+
+
+class ReviewContextTests(unittest.TestCase):
+    def content(self, progress):
+        return compose_session_context({"progress": progress}, NOW).content
+
+    def test_due_topic_appears_in_its_own_section(self):
+        content = self.content([
+            _entry(1, due_at="2026-01-09T12:00:00+00:00"),
+            _entry(2, due_at="2026-01-12T12:00:00+00:00"),
+        ])
+        progress_section, due_section = content.split("REPASOS PENDIENTES:\n")
+        self.assertIn("- 1. Tema 1: en_progreso (Bien.)", progress_section)
+        self.assertIn("- 2. Tema 2: en_progreso (Bien.)", progress_section)
+        self.assertIn("- 1. Tema 1", due_section)
+        self.assertNotIn("Tema 2", due_section)
+
+    def test_no_due_topics_means_no_section(self):
+        content = self.content([_entry(1, due_at="2026-01-12T12:00:00+00:00")])
+        self.assertIn("PROGRESO DEL ALUMNO", content)
+        self.assertNotIn("REPASOS PENDIENTES", content)
+
+    def test_due_section_keeps_five_oldest(self):
+        content = self.content([
+            _entry(number, due_at=f"2026-01-0{9 - number}T12:00:00+00:00") for number in range(1, 8)
+        ])
+        due_section = content.split("REPASOS PENDIENTES:\n")[1]
+        self.assertEqual(
+            due_section.splitlines(),
+            [f"- {number}. Tema {number}" for number in (7, 6, 5, 4, 3)],
+        )
+
+    def test_topic_without_reviews_has_no_evidence(self):
+        entry = {**_entry(1, due_at="2026-01-12T12:00:00+00:00"), "reviews": []}
+        self.assertIn("- 1. Tema 1: en_progreso\n", f"{self.content([entry])}\n")
+
+    def test_prompt_uses_topic_numbers_and_reviews(self):
+        prompt = SupervisorBuilder(PLAN).system_prompt()
+        self.assertIn("topic_number", prompt)
+        self.assertIn("REPASOS PENDIENTES", prompt)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ from config.settings import (
     PDF_DIRECTORY,
 )
 from core.graphs import StudyGraph
+from core.study.repository import ProgressRepository
 from documents.cleanup import cleanup_orphan_documents
 from documents.pipeline import DoclingExecutor, DocumentIndexer, DocumentPipeline
 from documents.repository import DocumentRepository
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI):
         )
     app.state.session_registry = SessionRegistry()
     app.state.document_repository = await DocumentRepository.open(APP_DATABASE_PATH)
+    app.state.progress_repository = await ProgressRepository.open(APP_DATABASE_PATH)
     app.state.document_queue = asyncio.Queue()
     app.state.document_workers = []
     app.state.docling_executor = None
@@ -91,6 +93,7 @@ async def lifespan(app: FastAPI):
         study_graph = getattr(app.state, "study_graph", None)
         if study_graph is not None:
             await study_graph.checkpointer.conn.close()
+        await app.state.progress_repository.close()
         await app.state.document_repository.close()
 
 app = FastAPI(lifespan=lifespan)

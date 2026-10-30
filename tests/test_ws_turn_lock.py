@@ -30,6 +30,8 @@ class _FakeStudyGraph:
         self.active = 0
         self.max_active = 0
         self.calls = []
+        self.inputs = []
+        self.progress_updates = []
 
     async def aget_state(self, config):
         values = {"study_plan": "plan"} if self.context_ready else {}
@@ -41,18 +43,36 @@ class _FakeStudyGraph:
             return
         content = graph_input["messages"][-1].content
         self.calls.append(content)
+        self.inputs.append(graph_input)
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         try:
             await asyncio.sleep(self.delay)
         finally:
             self.active -= 1
-        yield (), "values", {"messages": [AIMessage(content=f"respuesta:{content}")]}
+        yield (), "values", {
+            "messages": [AIMessage(content=f"respuesta:{content}")],
+            "progress_updates": self.progress_updates,
+        }
 
 
 class _FakeRepository:
     async def list_ready_with_summaries(self, chat_id):
         return []
+
+
+class _FakeProgressRepository:
+    def __init__(self):
+        self.saved = []
+        self.broken = False
+
+    async def list_for_chat(self, chat_id):
+        return [{"topic_number": 1, "chat_id": chat_id}]
+
+    async def apply_updates(self, chat_id, updates, now):
+        if self.broken:
+            raise RuntimeError("base no disponible")
+        self.saved.append((chat_id, updates, now))
 
 
 def _make_client(test, *, delay=0.0, context_ready=True):
@@ -61,6 +81,7 @@ def _make_client(test, *, delay=0.0, context_ready=True):
     app.state.session_registry = SessionRegistry()
     app.state.study_graph = _FakeStudyGraph(delay, context_ready)
     app.state.document_repository = _FakeRepository()
+    app.state.progress_repository = _FakeProgressRepository()
     token_patch = patch("config.settings.APP_TOKEN", TOKEN)
     token_patch.start()
     test.addCleanup(token_patch.stop)
@@ -160,6 +181,72 @@ class WebSocketTurnLockTests(unittest.TestCase):
         with self.assertRaises(WebSocketDisconnect):
             with client.websocket_connect("/ws/thread", headers={"origin": "https://evil.example"}, subprotocols=PROTOCOLS) as websocket:
                 websocket.receive_json()
+
+
+class WebSocketProgressTests(unittest.TestCase):
+    UPDATE = {"topic_number": 1, "topic": "Definición", "status": "dominado", "evidence": "Bien."}
+
+    def test_turn_receives_saved_progress(self):
+        client, graph = _make_client(self)
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "a"})
+            _receive_until(websocket, "agent_response")
+        self.assertEqual(graph.inputs[0]["progress"], [{"topic_number": 1, "chat_id": "thread"}])
+
+    def test_progress_is_saved_before_the_response(self):
+        client, graph = _make_client(self)
+        graph.progress_updates = [self.UPDATE]
+        repository = client.app.state.progress_repository
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "a"})
+            _receive_until(websocket, "agent_response")
+            self.assertEqual(repository.saved[0][:2], ("thread", [self.UPDATE]))
+
+    def test_save_failure_keeps_response(self):
+        client, graph = _make_client(self)
+        graph.progress_updates = [self.UPDATE]
+        client.app.state.progress_repository.broken = True
+        with self.assertLogs("api.ws", level="ERROR"):
+            with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+                websocket.send_json({"content": "a"})
+                events = _receive_until(websocket, "agent_response")
+        self.assertEqual(events[-1]["content"], "respuesta:a")
+
+    def test_context_turn_does_not_save_progress(self):
+        client, _ = _make_client(self, context_ready=False)
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "quiero estudiar"})
+            websocket.receive_json()
+        self.assertEqual(client.app.state.progress_repository.saved, [])
+
+
+class _ClosedSocket:
+    """Socket cuyo cliente se fue: cualquier envío falla."""
+
+    def __init__(self, state):
+        self.app = SimpleNamespace(state=state)
+
+    async def send_json(self, payload):
+        raise RuntimeError("socket cerrado")
+
+
+class ClosedSocketProgressTests(unittest.IsolatedAsyncioTestCase):
+    async def test_progress_is_saved_if_socket_closes_mid_turn(self):
+        update = {"topic_number": 1, "topic": "Definición", "status": "dominado", "evidence": "Bien."}
+        graph = _FakeStudyGraph(0.0, True)
+        graph.progress_updates = [update]
+        repository = _FakeProgressRepository()
+        socket = _ClosedSocket(SimpleNamespace(
+            study_graph=graph,
+            document_repository=_FakeRepository(),
+            progress_repository=repository,
+        ))
+        sender = ws.SafeSender(socket)
+
+        await ws._process_message(socket, sender, "thread", "a")
+
+        self.assertTrue(sender.closed)
+        self.assertEqual(repository.saved[0][:2], ("thread", [update]))
 
 
 class WebSocketSecurityTests(unittest.TestCase):

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException, status
 from langchain.messages import HumanMessage
@@ -20,6 +21,7 @@ from api.security import (
 )
 from config.settings import WS_MAX_MESSAGE_CHARS
 from core.streaming import execute_astream_graph
+from core.study.repository import ProgressRepository
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -209,6 +211,18 @@ async def _run_graph(graph, sender: SafeSender, graph_input, config):
         heartbeat.cancel()
 
 
+async def _save_progress(repository: ProgressRepository, thread_id: str, result: dict) -> None:
+    """Guarda las evaluaciones del turno; un fallo no debe perder la respuesta ya generada."""
+    try:
+        await repository.apply_updates(
+            thread_id,
+            result.get("progress_updates") or [],
+            datetime.now(timezone.utc),
+        )
+    except Exception:
+        logger.exception("No se pudo guardar el progreso thread_id=%s", thread_id)
+
+
 async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: str, message: str) -> None:
     """Ejecuta un turno del grafo padre; él decide si contextualiza o estudia."""
     state = websocket.app.state
@@ -221,6 +235,7 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
     graph_input = Command(resume=message) if snapshot.interrupts else {
         "messages": [HumanMessage(content=message)],
         "documents": await state.document_repository.list_ready_with_summaries(thread_id),
+        "progress": await state.progress_repository.list_for_chat(thread_id),
     }
 
     logger.info("turn start thread_id=%s", thread_id)
@@ -233,6 +248,8 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
             "content": interrupt_info[0].value,
         })
     elif had_plan:
+        # Se guarda antes de avisar, porque el cliente refresca el progreso con la respuesta.
+        await _save_progress(state.progress_repository, thread_id, result)
         await sender.send_json({
             "type": "agent_response",
             "content": result["messages"][-1].content,

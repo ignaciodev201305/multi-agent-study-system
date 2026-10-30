@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 
 from core.board import Board
+from core.schemas import StudyPlan
+from core.study.repository import ProgressUpdate
 
 
 @dataclass
@@ -12,8 +14,10 @@ class TurnContext:
     session_id: str
     # Documentos listos de la sesión con su resumen.
     documents: list[dict] = field(default_factory=list)
-    # Actualizaciones de record_progress durante el turno.
-    progress_updates: dict[str, dict] = field(default_factory=dict)
+    # Plan con el temario de la sesión.
+    study_plan: StudyPlan | None = None
+    # Evaluaciones de record_progress durante el turno.
+    progress_updates: list[ProgressUpdate] = field(default_factory=list)
     # Copia de trabajo del turno.
     board: Board = field(default_factory=Board)
     # Quién firma los bloques que se agregan.

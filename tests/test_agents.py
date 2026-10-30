@@ -1,6 +1,7 @@
 """Pruebas del catálogo, el plan de estudio y el supervisor con subagentes como tools."""
 
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
@@ -13,6 +14,7 @@ from core.agents.catalog import ARCHETYPES, catalog_for_factory
 from core.schemas import StudyPlan
 from core.tools import TurnContext
 from core.tools.documents import get_study_material, search_documents
+from core.tools.progress import record_progress
 
 
 class _ToolModel(GenericFakeChatModel):
@@ -81,7 +83,7 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
             }]),
             AIMessage(content="", tool_calls=[{
                 "name": "record_progress",
-                "args": {"topic": "Definición", "status": "dominado", "evidence": "Respondió bien."},
+                "args": {"topic_number": 1, "status": "dominado", "evidence": "Respondió bien."},
                 "id": "call-2",
             }]),
             AIMessage(content="Aquí va la explicación del especialista."),
@@ -95,7 +97,7 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
         ):
             supervisor = SupervisorBuilder(_plan(archetypes=[{"archetype": "explicador", "focus": "Derivadas."}])).build()
 
-        context = TurnContext(session_id="s", documents=[STUDY_MAP])
+        context = TurnContext(session_id="s", documents=[STUDY_MAP], study_plan=_plan())
         result = await supervisor.ainvoke(
             {"messages": [SystemMessage(content="contexto"), HumanMessage(content="hola")]},
             context=context,
@@ -103,7 +105,12 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
 
         tool_messages = [message for message in result["messages"] if message.type == "tool"]
         self.assertIn("regla de la cadena", tool_messages[0].content)
-        self.assertEqual(context.progress_updates["Definición"]["status"], "dominado")
+        self.assertEqual(context.progress_updates, [{
+            "topic_number": 1,
+            "topic": "Definición",
+            "status": "dominado",
+            "evidence": "Respondió bien.",
+        }])
         self.assertEqual(result["messages"][-1].content, "Aquí va la explicación del especialista.")
 
     def test_system_prompt_includes_plan(self):
@@ -127,6 +134,43 @@ class _FakeStore:
 class _Runtime:
     def __init__(self, context):
         self.context = context
+
+
+class RecordProgressTests(unittest.IsolatedAsyncioTestCase):
+    def runtime(self):
+        return _Runtime(TurnContext("s", study_plan=_plan()))
+
+    async def record(self, runtime, topic_number, status="dominado", evidence="Bien."):
+        return await record_progress.coroutine(
+            topic_number=topic_number, status=status, evidence=evidence, runtime=runtime
+        )
+
+    async def test_invalid_number_returns_numbered_syllabus(self):
+        runtime = self.runtime()
+        for number in (0, 3, -1):
+            result = await self.record(runtime, number)
+            self.assertIn("no existe", result)
+            self.assertIn("2. Regla de la cadena", result)
+        self.assertEqual(runtime.context.progress_updates, [])
+
+    async def test_uses_syllabus_wording(self):
+        runtime = self.runtime()
+        self.assertIn("Regla de la cadena", await self.record(runtime, 2))
+        self.assertEqual(runtime.context.progress_updates[0]["topic"], "Regla de la cadena")
+
+    async def test_last_evaluation_of_topic_wins(self):
+        runtime = self.runtime()
+        await self.record(runtime, 1, status="dominado", evidence="Primera.")
+        await self.record(runtime, 2, status="en_progreso")
+        await self.record(runtime, 1, status="con_dificultad", evidence="Última.")
+        updates = runtime.context.progress_updates
+        self.assertEqual([update["topic_number"] for update in updates], [2, 1])
+        self.assertEqual((updates[1]["status"], updates[1]["evidence"]), ("con_dificultad", "Última."))
+
+    async def test_update_list_is_shared_with_subagent_copies(self):
+        context = TurnContext("s", study_plan=_plan())
+        await self.record(_Runtime(replace(context, author="evaluador")), 1)
+        self.assertEqual(len(context.progress_updates), 1)
 
 
 class DocumentToolsTests(unittest.IsolatedAsyncioTestCase):
