@@ -19,6 +19,7 @@ from config.settings import (
     PDF_DIRECTORY,
     UPLOAD_CHUNK_SIZE,
 )
+from core.board import Board
 from core.tools.documents import forget_vector_store
 from documents.storage import SessionManager
 
@@ -32,6 +33,8 @@ async def list_chat_messages_endpoint(chat_id: str, request: Request):
     validate_chat_id(chat_id)
     config = {"configurable": {"thread_id": chat_id}}
 
+    # Se lee antes del checkpoint: si dice que terminó, el estado ya trae la respuesta.
+    turn_active = request.app.state.session_registry.is_turn_active(chat_id)
     snapshot = await request.app.state.study_graph.aget_state(config)
     if snapshot.values.get("study_plan") is not None:
         phase = "study"
@@ -53,7 +56,9 @@ async def list_chat_messages_endpoint(chat_id: str, request: Request):
         "chat_id": chat_id,
         "phase": phase,
         "pending_question": pending_question,
+        "turn_active": turn_active,
         "messages": messages,
+        "board": snapshot.values.get("board") or Board().model_dump(),
     }
 
 

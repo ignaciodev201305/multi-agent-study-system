@@ -105,6 +105,18 @@ class WebSocketTurnLockTests(unittest.TestCase):
         self.assertEqual(graph.calls, ["a", "b"])
         self.assertEqual(graph.max_active, 1)
 
+    def test_is_turn_active_follows_the_turn(self):
+        client, _ = _make_client(self, delay=0.3)
+        registry = client.app.state.session_registry
+        self.assertFalse(registry.is_turn_active("thread"))
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "a"})
+            time.sleep(0.1)
+            self.assertTrue(registry.is_turn_active("thread"))
+            _receive_until(websocket, "agent_response")
+            time.sleep(0.1)
+            self.assertFalse(registry.is_turn_active("thread"))
+
     def test_connection_does_not_hold_lock_between_turns(self):
         client, _ = _make_client(self)
         with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as first:

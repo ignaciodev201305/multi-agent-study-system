@@ -65,6 +65,11 @@ class SessionRegistry:
         """Devuelve la conexión activa de una sesión."""
         return self._sockets.get(thread_id)
 
+    def is_turn_active(self, thread_id: str) -> bool:
+        """Indica si la sesión tiene un turno en curso."""
+        entry = self._locks.get(thread_id)
+        return entry is not None and entry["lock"].locked()
+
     async def _get_lock(self, thread_id: str) -> asyncio.Lock:
         """Obtiene el lock por sesión y registra quién lo usa."""
         async with self._guard:

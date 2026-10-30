@@ -26,3 +26,5 @@ class StudyState(ContextStudyState):
     documents: list[dict]
     # Progreso del alumno por tema.
     progress: Annotated[dict, merge_progress]
+    # Pizarra de la sesión como JSON.
+    board: dict
