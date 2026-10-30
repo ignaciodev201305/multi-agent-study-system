@@ -1,0 +1,45 @@
+services:
+  backend:
+    build: .
+    env_file: .env
+    ports:
+      # Necesario para la URL por defecto de la interfaz (ws://127.0.0.1:8000).
+      - "8000:8000"
+    volumes:
+      - data_volume:/app/data
+      - models_cache:/home/appuser/.cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  frontend:
+    build: ./client
+    ports:
+      # Abrir la interfaz en http://127.0.0.1:5173: es el origen permitido por CORS.
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  data_volume:
+  # Caché de modelos de Docling/HuggingFace para no descargarlos en cada arranque.
+  models_cache:
