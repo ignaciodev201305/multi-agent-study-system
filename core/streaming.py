@@ -1,7 +1,7 @@
 """Ejecución de grafos en streaming para enviar tokens y estados al front."""
 
 # Nodos internos cuyos tokens no son parte de la respuesta al alumno.
-INTERNAL_NODES = {"summarize_conversation", "factory_multi_agent_system"}
+INTERNAL_NODES = {"summarize_conversation", "build_study_plan"}
 
 
 def token_text(content) -> str:

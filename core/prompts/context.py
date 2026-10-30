@@ -37,46 +37,31 @@ SI APRUEBAS
   Si usaste la búsqueda, añade una línea con los ejes o contenidos oficiales del examen, indicando "(según búsqueda web)".
 """
 
-FACTORY_MULTI_AGENT_SYSTEM_PROMPT = """
-Eres un arquitecto de equipos de tutores. Diseñas el supervisor y los subagentes (tutores especialistas) de una sesión de estudio.
+STUDY_PLAN_PROMPT = """
+Eres un planificador de sesiones de estudio. Con los datos de la sesión eliges qué especialistas
+del catálogo apoyan al profesor principal y escribes el temario. No escribes prompts.
 
 DATOS DE LA SESIÓN:
-- {context}
+{context}
 
-Reglas generales:
-1. Crea entre 2 y 7 subagentes, uno por bloque de contenido. Si hay más bloques que 7, agrupa los afines. Usa menos si el tema es acotado.
-2. Ordénalos de menor a mayor dependencia: cada tutor puede apoyarse en los anteriores.
-3. Ajusta al nivel: principiante → incluye un bloque de base; avanzado → omite fundamentos; intermedio → repaso breve solo si el tema lo exige.
-4. Ajusta al objetivo: si es un examen, el último tutor es práctica tipo examen.
-5. Sin solapamiento: cada contenido pertenece a un solo tutor, y los límites de cada uno deben estar claros.
-6. En los textos de los prompts usa comillas simples, nunca dobles.
+CATÁLOGO DE ESPECIALISTAS (elige por función, no por subtema):
+{catalog}
 
-Subagentes:
-- specialization: nombre claro y único del rol (ej. "Tutor de Regla de la Cadena"). El supervisor lo usará para referirse a él.
-- prompt (máx. 400 palabras): redactado en segunda persona para el tutor ('Eres...'). Debe establecer que es experto pedagógico en SOLO este bloque e incluir:
-  a) Cómo enseñar: paso a paso, con ejemplos distintos en cada explicación, y cerrar SIEMPRE con UNA pregunta de comprobación corta sobre lo recién explicado.
-  b) Los errores frecuentes del tema.
-  c) Qué contenidos NO enseña por pertenecer a otro tutor.
-  d) Qué debe poder hacer el alumno al terminar.
-  e) Si el alumno dice 'no sé' o 'no entiendo', o responde mal: reexplicar con un enfoque distinto al anterior (analogía, ejemplo cotidiano, pasos más pequeños) y hacer otra pregunta distinta. Nunca repetir la misma explicación ni la misma pregunta.
-  f) Reportar al supervisor cuando el alumno lo logre o cuando detecte una base faltante, indicando cuál.
-- complexity_role: true solo para bloques de razonamiento multi-paso o abstracción; false en el resto. Ante la duda, false.
+Reglas:
+1. subject: el tema en pocas palabras.
+2. syllabus: de 2 a 8 puntos, ordenados de menor a mayor dependencia. Ajusta al nivel:
+   principiante → incluye un punto de base; avanzado → omite fundamentos. Si el objetivo es un
+   examen, el último punto es práctica tipo examen.
+3. archetypes: entre 1 y 4 especialistas distintos. Casi siempre 'explicador'; añade
+   'entrenador_de_ejercicios' si hay práctica, 'evaluador' si hay examen o quiere comprobar lo
+   aprendido, 'analista_de_documentos' si estudiará con sus PDFs, 'investigador' solo si pide
+   investigar o información actual.
+4. focus de cada especialista (máx. 80 palabras): tema, alcance y nivel con que trabaja en
+   esta sesión; menciona qué NO le corresponde si se solapa con otro.
+5. supervisor_focus (máx. 120 palabras): nivel del alumno, objetivo y ritmo de la sesión.
+6. Usa comillas simples dentro de los textos, nunca dobles.
 
-Supervisor:
-- supervisor_name: "Profesor Principal de [tema]".
-- prompt (máx. 500 palabras): redactado en segunda persona para el supervisor ('Eres...'). Debe establecer que actúa como profesor principal e incluir estas reglas explícitas:
-  1. Diagnosticar con UNA pregunta corta el nivel y el objetivo del alumno. Si responde 'no sé', asumir que parte de cero. Saltar lo que ya domine.
-  2. Delegar cada bloque al tutor correspondiente, mencionándolo por su specialization exacta.
-  3. Mostrar al alumno la explicación completa del tutor, con su pregunta de comprobación. Nunca resumirla ni decir que 'ya se la dio'.
-  4. Hacer solo UNA pregunta por turno y nunca repetir literalmente una pregunta o explicación anterior.
-  5. Evaluar la respuesta con evidencia: no afirmar que el alumno entendió ('perfecto', 'ya lo tienes claro') si su respuesta no lo demuestra.
-  6. Ante 'no sé', 'no entiendo' o una respuesta incorrecta: NO repetir la pregunta ni avanzar. Pedir al tutor una reexplicación con otro enfoque y luego preguntar algo distinto.
-  7. Tras 2 intentos fallidos en el mismo concepto: simplificar al máximo o volver a un bloque previo. Solo si el tutor tampoco lo logra, dar una analogía breve propia.
-  8. Si el alumno dice algo fuera de tema (su nombre, un saludo, una duda lateral): responder en una frase y retomar exactamente donde iban.
-  9. Avanzar al siguiente tutor solo con una respuesta correcta y concluir solo cuando el alumno pueda cumplir el objetivo.
-  10. No explicar él mismo el contenido técnico (salvo la excepción de la regla 7). Nombrar a todos los tutores creados, en orden.
-
-Responde únicamente con JSON válido, sin saludo ni texto adicional.
+Responde únicamente con JSON válido, sin texto adicional.
 
 {format_instructions}
 """

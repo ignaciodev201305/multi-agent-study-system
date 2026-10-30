@@ -1,6 +1,6 @@
 # Sistema de estudio multiagente
 
-Aplicación para estudiar con agentes de IA. Cada sesión construye un contexto de estudio a partir de lo que describe el usuario (objetivo, nivel previo y material). Si el contexto no es suficiente, el sistema hace preguntas de aclaración. Después crea un supervisor con subagentes especializados y responde dentro de ese contexto.
+Aplicación para estudiar con agentes de IA. Cada sesión construye un contexto de estudio a partir de lo que describe el usuario (objetivo, nivel previo y material). Si el contexto no es suficiente, el sistema hace preguntas de aclaración. Después arma un plan (temario y especialistas elegidos de un catálogo de arquetipos: explicador, entrenador de ejercicios, evaluador, analista de documentos, investigador) y un profesor principal que consulta a esos especialistas como herramientas, verifica la matemática con SymPy y registra el progreso del alumno por tema.
 
 El usuario puede subir PDFs de dos tipos:
 
@@ -20,7 +20,7 @@ Los PDFs se procesan en segundo plano: la subida responde con estado `queued` y 
 |---|---|
 | `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats/{id}/messages`, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
 | `config/` | `settings.py`: registro de modelos por rol (`MODEL_ROLES`, con override por entorno), rutas de datos y límites. |
-| `core/` | Grafos y agentes. `graphs/` (contexto y sesión), `agents/` (construcción del supervisor y subagentes), `prompts/` (por grafo), `tools/` (registro, búsqueda web y en documentos). `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
+| `core/` | Grafos y agentes. `graphs/` (contexto y sesión), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress` y `web_search`). `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
 | `documents/` | Procesamiento de PDFs en segundo plano. `pipeline.py`: Docling en un proceso aparte, índice Chroma y resumen por documento. `repository.py`: catálogo SQLite (estado y resumen de cada documento). `worker.py` procesa la cola, `cleanup.py` elimina archivos y vectores huérfanos y `storage.py` borra los directorios de cada sesión. |
 | `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos y caché LRU de supervisores). |
 | `client/` | Cliente Electron, React y Vite. Ver [client/README.md](client/README.md). |

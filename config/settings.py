@@ -69,3 +69,8 @@ APP_TOKEN = os.environ.get("APP_TOKEN", "").strip()
 # Límites del WebSocket para acotar costo: largo de mensaje y turnos por minuto por sesión.
 WS_MAX_MESSAGE_CHARS = max(1, int(os.environ.get("WS_MAX_MESSAGE_CHARS", "8000")))
 WS_MAX_TURNS_PER_MINUTE = max(1, int(os.environ.get("WS_MAX_TURNS_PER_MINUTE", "20")))
+
+# Tool math (SymPy): tiempo máximo del subproceso por cálculo.
+MATH_TIMEOUT_SECONDS = max(1, int(os.environ.get("MATH_TIMEOUT_SECONDS", "8")))
+# Pasos máximos del supervisor por turno (llamadas a modelo y tools).
+SUPERVISOR_RECURSION_LIMIT = max(5, int(os.environ.get("SUPERVISOR_RECURSION_LIMIT", "40")))

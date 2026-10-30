@@ -200,39 +200,6 @@ async def _run_graph(graph, sender: SafeSender, graph_input, config):
         heartbeat.cancel()
 
 
-async def _build_documents_input(state, thread_id: str) -> dict:
-    """Lee los documentos listos del catálogo; los que terminen a mitad de turno entran en el siguiente."""
-    documents = await state.document_repository.list_ready_with_summaries(thread_id)
-    return {
-        "documents_context": format_documents_context(documents),
-        "has_rag": any(document["document_type"] == "rag" for document in documents),
-        "has_study_map": any(document["document_type"] == "study_map" for document in documents),
-    }
-
-
-def format_documents_context(documents: list[dict]) -> str:
-    """Concatena los resúmenes guardados por el worker, sin llamar al LLM."""
-    parts = []
-    for document in documents:
-        summary = document.get("summary") or {}
-        title = summary.get("title") or document["original_filename"]
-        if document["document_type"] == "study_map":
-            lines = [f"### Mapa de estudio: {title}", summary.get("summary", "")]
-            for label, key in (
-                ("Temas", "topics"),
-                ("Fórmulas", "formulas"),
-                ("Ejercicios", "exercises"),
-                ("Conceptos", "concepts"),
-            ):
-                items = summary.get(key) or []
-                if items:
-                    lines.append(f"{label}:\n" + "\n".join(f"- {item}" for item in items))
-        else:
-            lines = [f"### Documento consultable (rag): {title}", summary.get("summary", "")]
-        parts.append("\n".join(line for line in lines if line))
-    return "\n\n".join(parts)
-
-
 async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: str, message: str) -> None:
     """Ejecuta un turno: contexto (con sus interrupts) o sesión, según el checkpoint."""
     state = websocket.app.state
@@ -240,9 +207,9 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
     graph_context_study = state.graph_context_study
 
     snapshot = await graph_context_study.aget_state(config)
-    multi_agent_system = snapshot.values.get("multi_agent_system")
+    study_plan = snapshot.values.get("study_plan")
 
-    if multi_agent_system is None:
+    if study_plan is None:
         graph_input = Command(resume=message) if snapshot.interrupts else {
             "messages": [HumanMessage(content=message)]
         }
@@ -259,7 +226,7 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
             })
             return
 
-        if (context_study or {}).get("multi_agent_system") is None:
+        if (context_study or {}).get("study_plan") is None:
             await _send_ws_error(
                 sender,
                 code="context_failed",
@@ -275,10 +242,11 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
         })
         return
 
+    # Documentos listos al empezar el turno; los que terminen a mitad de turno entran en el siguiente.
     graph_input = {
         "messages": [HumanMessage(content=message)],
-        "multi_agent_system_context": multi_agent_system,
-        **await _build_documents_input(state, thread_id),
+        "study_plan": study_plan,
+        "documents": await state.document_repository.list_ready_with_summaries(thread_id),
     }
     logger.info("session turn start thread_id=%s", thread_id)
     session_study, _ = await _run_graph(state.graph_session_study, sender, graph_input, config)

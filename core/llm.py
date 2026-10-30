@@ -9,12 +9,12 @@ from config.settings import EMBEDDINGS_MODEL, MODEL_ROLES, OPENAI_API_BASE
 logger = logging.getLogger(__name__)
 
 
-def build_model(role: str):
-    """Construye el ChatOpenAI configurado para un rol de MODEL_ROLES."""
+def build_model(role: str, temperature: float | None = None):
+    """Construye el ChatOpenAI de un rol de MODEL_ROLES; un arquetipo puede fijar su temperatura."""
     spec = MODEL_ROLES[role]
     kwargs = {
         "model": spec["model"],
-        "temperature": spec["temperature"],
+        "temperature": spec["temperature"] if temperature is None else temperature,
         "openai_api_base": OPENAI_API_BASE,
     }
     if spec["reasoning_effort"]:

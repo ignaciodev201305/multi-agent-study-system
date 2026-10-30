@@ -17,4 +17,5 @@ langchain-tavily==0.2.18
 langgraph==1.2.15
 langgraph-checkpoint==4.3.0
 langgraph-checkpoint-sqlite==3.1.2
-langgraph-supervisor==0.0.31
+
+sympy==1.14.0

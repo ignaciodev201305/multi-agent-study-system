@@ -1,25 +1,53 @@
-"""Modelos Pydantic para el sistema multiagente y los contextos de estudio."""
+"""Modelos Pydantic del plan de estudio y de los contextos de la sesión."""
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-class SubAgent(BaseModel):
-    """Subagente especialista con su rol, prompt y nivel de complejidad."""
-    specialization: str = Field(description="Rol del subagente. FORMATO: [a-zA-Z0-9_-]")
-    prompt: str = Field(description="System prompt del tutor, en segunda persona. MAX 400 PALABRAS", max_length=3000)
-    complexity_role: bool = Field(default=False, description="True solo si el tutor exige razonamiento multi-paso, abstracción o demostración (ej. regla de la cadena); False si es explicación directa o práctica guiada. Ante la duda, False.")
-
-class SupervisorAgent(BaseModel):
-    """Supervisor que coordina a los subagentes durante la sesión."""
-    name: str = Field(description="Rol del supervisor. FORMATO: [a-zA-Z0-9_-]")
-    prompt: str = Field(description="System prompt del supervisor, en segunda persona. MAX 400 PALABRAS", max_length=3000)
+ArchetypeName = Literal[
+    "explicador",
+    "entrenador_de_ejercicios",
+    "evaluador",
+    "analista_de_documentos",
+    "investigador",
+]
 
 
-class MultiAgentSystem(BaseModel):
-    """Configuración completa del supervisor y sus subagentes."""
-    supervisor: SupervisorAgent
-    subagents: List[SubAgent] = Field(description="Lista de subagentes.")
+class SelectedArchetype(BaseModel):
+    """Arquetipo del catálogo elegido para la sesión, con su foco concreto."""
+    archetype: ArchetypeName = Field(description="Nombre exacto del arquetipo del catálogo.")
+    focus: str = Field(
+        description="Tema, alcance y nivel con que este arquetipo trabaja en la sesión. MAX 80 PALABRAS",
+        max_length=800,
+    )
+
+
+class StudyPlan(BaseModel):
+    """Plan de la sesión: temario que guarda el supervisor y arquetipos que lo apoyan."""
+    subject: str = Field(description="Tema de la sesión en pocas palabras (ej. 'regla de la cadena').")
+    syllabus: List[str] = Field(
+        description="Temario ordenado de menor a mayor dependencia, de 2 a 8 puntos.",
+        min_length=1,
+        max_length=12,
+    )
+    supervisor_focus: str = Field(
+        description="Cómo debe conducir la sesión el profesor principal (nivel, objetivo, ritmo). MAX 120 PALABRAS",
+        max_length=1200,
+    )
+    archetypes: List[SelectedArchetype] = Field(
+        description="Entre 1 y 4 arquetipos distintos del catálogo.",
+        min_length=1,
+        max_length=4,
+    )
+
+    @field_validator("archetypes")
+    @classmethod
+    def _unique_archetypes(cls, archetypes):
+        names = [selected.archetype for selected in archetypes]
+        if len(names) != len(set(names)):
+            raise ValueError("Cada arquetipo puede elegirse una sola vez.")
+        return archetypes
+
 
 class ContextClassification(BaseModel):
     approved_context: bool = Field(description="Bandera que indica si apruebas el contexto proporcionado por el usuario")

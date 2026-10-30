@@ -26,7 +26,7 @@ class _FakeSupervisor:
     def __init__(self):
         self.received = []
 
-    async def ainvoke(self, values):
+    async def ainvoke(self, values, config=None, context=None):
         self.received.append(values["messages"])
         last = values["messages"][-1].content
         return {"messages": values["messages"] + [AIMessage(content=f"respuesta a {last}")]}
@@ -39,8 +39,8 @@ class SessionHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.chain = _FakeChain()
         self.session_graph.chain_builder.build_chain.return_value = self.chain
         self.supervisor = _FakeSupervisor()
-        self.session_graph._get_or_build_multi_agent_system = lambda *_: self.supervisor
-        self.session_graph._get_cached_multi_agent_system = lambda *_: self.supervisor
+        self.session_graph._get_or_build_supervisor = lambda *_: self.supervisor
+        self.session_graph._get_cached_supervisor = lambda *_: self.supervisor
         self.graph = await self.session_graph.compile_graph(checkpointer=InMemorySaver())
         self.config = {"configurable": {"thread_id": "t"}}
 
@@ -49,10 +49,13 @@ class SessionHistoryTests(unittest.IsolatedAsyncioTestCase):
             await self.graph.ainvoke(
                 {
                     "messages": [HumanMessage(content=f"m{index}")],
-                    "multi_agent_system_context": None,
-                    "documents_context": "doc",
-                    "has_rag": False,
-                    "has_study_map": True,
+                    "study_plan": None,
+                    "documents": [{
+                        "document_id": "d1",
+                        "document_type": "study_map",
+                        "original_filename": "guia.pdf",
+                        "summary": {"title": "Guía", "summary": "Derivadas."},
+                    }],
                 },
                 self.config,
             )

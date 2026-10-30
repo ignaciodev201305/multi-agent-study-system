@@ -19,6 +19,7 @@ from config.settings import (
     PDF_DIRECTORY,
     UPLOAD_CHUNK_SIZE,
 )
+from core.tools.documents import forget_vector_store
 from documents.storage import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ async def list_chat_messages_endpoint(chat_id: str, request: Request):
     config = {"configurable": {"thread_id": chat_id}}
 
     context_snapshot = await request.app.state.graph_context_study.aget_state(config)
-    if context_snapshot.values.get("multi_agent_system") is not None:
+    if context_snapshot.values.get("study_plan") is not None:
         phase = "study"
     elif context_snapshot.interrupts:
         phase = "clarification"
@@ -80,6 +81,7 @@ async def delete_chat_endpoint(chat_id: str, request: Request):
         session_manager.session_path = str(Path(DATA_DIRECTORY) / chat_id)
         session_manager.remove_session(chat_id)
         request.app.state.session_study_graph_instance.remove_session_cache_entry(chat_id)
+        forget_vector_store(chat_id)
         request.app.state.session_registry.rate_limiter.forget(chat_id)
     except Exception:
         logger.exception("No se pudo eliminar la sesión chat_id=%s", chat_id)

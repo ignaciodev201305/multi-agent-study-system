@@ -12,7 +12,8 @@ from langchain.messages import AIMessage
 from starlette.websockets import WebSocketDisconnect
 
 from api import ws
-from api.ws import SessionRegistry, format_documents_context
+from api.ws import SessionRegistry
+from core.graphs import format_documents_context
 
 # TestClient muta el dict de headers: cada conexión recibe una copia (dict(ORIGIN)).
 ORIGIN = {"origin": "http://127.0.0.1:5173"}
@@ -25,7 +26,7 @@ class _FakeContextGraph:
         self.ready = ready
 
     async def aget_state(self, config):
-        values = {"multi_agent_system": "sistema"} if self.ready else {}
+        values = {"study_plan": "plan"} if self.ready else {}
         return SimpleNamespace(values=values, interrupts=())
 
     async def astream(self, graph_input, config, stream_mode):
@@ -210,6 +211,7 @@ class DocumentsContextTests(unittest.TestCase):
         ])
         self.assertIn("Mapa de estudio: Guía", context)
         self.assertIn("- Regla de la cadena", context)
+        self.assertNotIn("Fórmulas", context)
         self.assertIn("Documento consultable (rag): Libro", context)
 
 
