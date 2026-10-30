@@ -10,6 +10,7 @@ ArchetypeName = Literal[
     "evaluador",
     "analista_de_documentos",
     "investigador",
+    "tutor_de_codigo",
 ]
 
 

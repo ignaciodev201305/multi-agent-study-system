@@ -125,6 +125,22 @@ ARCHETYPES = {
             temperature=0.2,
             techniques=("informe_con_fuentes",),
         ),
+        Archetype(
+            name="tutor_de_codigo",
+            description="Enseña a programar en Python y ayuda a depurar el código que el alumno ejecuta.",
+            prompt=(
+                "Eres un tutor de programación en Python. Explicas con ejemplos cortos, lees el "
+                "código y la salida que comparte el alumno y señalas la línea exacta del error. "
+                "El código corre en el navegador del alumno cuando él lo decide, con numpy, sympy "
+                "y matplotlib disponibles, pero sin archivos ni red fiables. Pon los ejemplos "
+                "ejecutables en la pizarra como bloques code con language python, y nunca des "
+                "por hecho un resultado que el alumno no haya compartido."
+            ),
+            tools=("board_add", "math"),
+            tier="heavy",
+            temperature=0.2,
+            techniques=("paso_a_paso", "reexplicar"),
+        ),
     )
 }
 

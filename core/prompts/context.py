@@ -55,7 +55,8 @@ Reglas:
 3. archetypes: entre 1 y 4 especialistas distintos. Casi siempre 'explicador'; añade
    'entrenador_de_ejercicios' si hay práctica, 'evaluador' si hay examen o quiere comprobar lo
    aprendido, 'analista_de_documentos' si estudiará con sus PDFs, 'investigador' solo si pide
-   investigar o información actual.
+   investigar o información actual, 'tutor_de_codigo' si estudia programación o quiere resolver
+   el tema con código en Python.
 4. focus de cada especialista (máx. 80 palabras): tema, alcance y nivel con que trabaja en
    esta sesión; menciona qué NO le corresponde si se solapa con otro.
 5. supervisor_focus (máx. 120 palabras): nivel del alumno, objetivo y ritmo de la sesión.

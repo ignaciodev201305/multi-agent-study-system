@@ -10,7 +10,8 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from pydantic import ValidationError
 
 from core.agents.builder import SupervisorBuilder
-from core.agents.catalog import ARCHETYPES, catalog_for_factory
+from core.agents.catalog import ARCHETYPES, archetype_prompt, catalog_for_factory
+from core.prompts.context import STUDY_PLAN_PROMPT
 from core.schemas import StudyPlan
 from core.tools import TurnContext
 from core.tools.documents import get_study_material, search_documents
@@ -71,6 +72,18 @@ class StudyPlanTests(unittest.TestCase):
         listing = catalog_for_factory()
         for name in ARCHETYPES:
             self.assertIn(name, listing)
+
+    def test_plan_accepts_code_tutor(self):
+        plan = _plan(archetypes=[{"archetype": "tutor_de_codigo", "focus": "Python desde cero."}])
+        self.assertEqual(plan.archetypes[0].archetype, "tutor_de_codigo")
+
+    def test_code_tutor_works_without_server_execution(self):
+        tutor = ARCHETYPES["tutor_de_codigo"]
+        self.assertEqual(set(tutor.tools), {"board_add", "math"})
+        self.assertEqual(tutor.tier, "heavy")
+        self.assertIn("navegador del alumno", tutor.prompt)
+        self.assertIn("PIZARRA", archetype_prompt(tutor, "foco"))
+        self.assertIn("tutor_de_codigo", STUDY_PLAN_PROMPT)
 
 
 class SupervisorTests(unittest.IsolatedAsyncioTestCase):
