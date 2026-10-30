@@ -1,28 +1,68 @@
 # Sistema de estudio multiagente
 
-Aplicación para estudiar con agentes de IA. Cada sesión construye un contexto de estudio a partir de lo que describe el usuario (objetivo, nivel previo y material). Si el contexto no es suficiente, el sistema hace preguntas de aclaración. Después arma un plan (temario y especialistas elegidos de un catálogo de arquetipos: explicador, entrenador de ejercicios, evaluador, analista de documentos, investigador) y un profesor principal que consulta a esos especialistas como herramientas, verifica la matemática con SymPy y registra el progreso del alumno por tema.
+Aplicación para estudiar con agentes de IA. Cada sesión construye un contexto de estudio a partir de lo que describe el usuario (objetivo, nivel previo y material). Si el contexto no es suficiente, el sistema hace preguntas de aclaración. Después arma un plan (temario y especialistas elegidos de un catálogo de arquetipos: explicador, entrenador de ejercicios, evaluador, analista de documentos, investigador, tutor de código) y un profesor principal que consulta a esos especialistas como herramientas, verifica la matemática con SymPy, deja lo importante en una pizarra y registra el progreso del alumno por tema.
 
 El usuario puede subir PDFs de dos tipos:
 
 - **`rag`**: el documento se extrae con Docling, se trocea e indexa en Chroma. Los agentes consultan los fragmentos relevantes de la sesión.
-- **`study_map`**: se genera un mapa de estudio (resumen, temas, fórmulas, ejercicios y conceptos) que se incluye en el contexto de la sesión.
+- **`study_map`**: se genera un mapa de estudio (resumen, temas, fórmulas, ejercicios y conceptos). El contexto de cada turno solo incluye el resumen y los temas; los agentes piden el resto con `get_study_material`.
 
 Los PDFs se procesan en segundo plano: la subida responde con estado `queued` y pasa por `processing` hasta `ready` o `failed`.
 
+## Funciones de estudio
+
+### Pizarra
+
+Es un espacio persistente junto al chat para lo que el alumno consultará después: fórmulas, pasos, tablas, código y gráficos. Solo escribe el agente: el profesor principal usa `board_add`, `board_edit` y `get_board`, y los especialistas `explicador`, `entrenador_de_ejercicios`, `evaluador` y `tutor_de_codigo` usan `board_add`. Cada bloque guarda su autor.
+
+- Los cambios llegan en vivo por el evento `board_patch` y se guardan en el checkpoint de la sesión al terminar el turno. Si el turno falla, la pizarra vuelve a su estado anterior.
+- Los gráficos se muestrean en el servidor con la tool `math`: las expresiones pasan por su lista blanca y el cliente solo dibuja los puntos. No hay zoom interactivo.
+- Un bloque con el mismo contenido que otro se rechaza, y cada especialista le informa al profesor principal qué agregó para que no lo repita.
+- Los límites se configuran con las variables `BOARD_*`. Los puntos de un gráfico no cuentan para `BOARD_MAX_BLOCK_CHARS`.
+
+### Repaso espaciado
+
+`record_progress` recibe el número del tema en el temario, y cada evaluación se guarda en `data/app.db` con su historial y su fecha de repaso. El calendario es un sistema Leitner con cinco cajas:
+
+| Caja | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| Días hasta el repaso | 1 | 3 | 7 | 14 | 30 |
+
+- `dominado` sube una caja, hasta la última.
+- `en_progreso` mantiene la caja.
+- `con_dificultad` vuelve a la caja 0.
+
+Cada turno recibe el progreso guardado y una sección `REPASOS PENDIENTES` con hasta 5 temas vencidos, y el profesor propone uno breve antes de seguir. El progreso se guarda aunque el cliente se desconecte a mitad de turno.
+
+| Endpoint | Contenido |
+|---|---|
+| `GET /chats/{id}/progress` | Temario de la sesión y, por tema evaluado, estado, caja, fecha de repaso y últimas revisiones. |
+| `GET /reviews/due?limit=20` | Repasos vencidos de todas las sesiones, con su `chat_id`. `limit` va de 1 a 100. |
+
+### Python en el navegador
+
+El alumno ejecuta Python en el cliente con Pyodide, dentro de un Web Worker. El servidor nunca ejecuta código.
+
+- El código del agente nunca corre solo: "Abrir en Python" lo copia al panel y ejecutarlo requiere un clic, porque ese código puede venir influido por un PDF.
+- El worker no recibe el token ni la dirección del backend.
+- Compartir el resultado con el tutor es explícito: "Enviar al tutor" lo deja en el cuadro de mensaje para que el alumno lo revise y lo envíe.
+
+Los detalles están en [client/README.md](client/README.md#python-con-pyodide).
+
 ## Componentes
 
-- **Backend** (`api/`, `core/`, `documents/`, `config/`): FastAPI y LangGraph sobre Python 3.14. Usa OpenRouter para los modelos, Tavily para la búsqueda web, Chroma para los vectores y SQLite para el catálogo de PDFs y los checkpoints de los grafos.
-- **Cliente** (`client/`): interfaz con Electron, React, Vite y TypeScript. Se comunica con el backend por WebSocket.
+- **Backend** (`api/`, `core/`, `documents/`, `config/`): FastAPI y LangGraph sobre Python 3.14. Usa OpenRouter para los modelos, Tavily para la búsqueda web, Chroma para los vectores y SQLite para el catálogo de PDFs, el progreso del alumno y los checkpoints de los grafos.
+- **Cliente** (`client/`): interfaz con Electron, React, Vite y TypeScript. Se comunica con el backend por WebSocket y ejecuta Python en el navegador con Pyodide.
 
 ## Estructura del proyecto
 
 | Ruta | Contenido |
 |---|---|
-| `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats/{id}/messages`, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
+| `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats/{id}/messages`, `GET /chats/{id}/progress`, `GET /reviews/due`, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
 | `config/` | `settings.py`: registro de modelos por rol (`MODEL_ROLES`, con override por entorno), rutas de datos y límites. |
-| `core/` | Grafos y agentes. `graphs/` (`study.py`: grafo padre con un checkpointer; `context.py`: subgrafo de contexto; `session.py`: nodos del turno), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress` y `web_search`). `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
+| `core/` | Grafos y agentes. `graphs/` (`study.py`: grafo padre con un checkpointer; `context.py`: subgrafo de contexto; `session.py`: nodos del turno), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `study/` (`scheduler.py`: calendario Leitner; `repository.py`: progreso e historial en SQLite), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress`, `web_search` y las tools de pizarra). `board.py` define los bloques y las operaciones de la pizarra, `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
 | `documents/` | Procesamiento de PDFs en segundo plano. `pipeline.py`: Docling en un proceso aparte, índice Chroma y resumen por documento. `repository.py`: catálogo SQLite (estado y resumen de cada documento). `worker.py` procesa la cola, `cleanup.py` elimina archivos y vectores huérfanos y `storage.py` borra los directorios de cada sesión. |
-| `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos y caché LRU de supervisores). |
+| `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos, caché LRU de supervisores, agentes, grafo de estudio, tool `math`, pizarra, calendario y progreso). |
 | `client/` | Cliente Electron, React y Vite. Ver [client/README.md](client/README.md). |
 
 Archivos de la raíz:
@@ -47,10 +87,10 @@ cp .env.example .env
 | Variable | Descripción |
 |---|---|
 | `OPENAI_API_KEY` | Clave de OpenRouter, usada por el backend como clave de un proveedor compatible con OpenAI. |
-| `TAVILY_API_KEY` | Clave de Tavily para la búsqueda web del clasificador de contexto. |
+| `TAVILY_API_KEY` | Clave de Tavily para la búsqueda web del clasificador de contexto y del arquetipo investigador. |
 | `APP_TOKEN` | Token local obligatorio. La API lo exige en HTTP (`Authorization: Bearer`) y en el WebSocket (subprotocolo `token.<APP_TOKEN>`); sin él no arranca. Genéralo con `python -c "import secrets; print(secrets.token_hex(32))"` y pégalo en el campo «Token local» de la pantalla de inicio del cliente. |
 
-Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000) y `WS_MAX_TURNS_PER_MINUTE` (20).
+Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `SUPERVISOR_RECURSION_LIMIT` (40), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8) y `BOARD_MAX_PLOT_FUNCTIONS` (4).
 
 Modelos por rol (`context_classifier`, `factory`, `supervisor`, `subagent_light`, `subagent_heavy`, `summarizer`): se cambian sin tocar código con `MODEL_<ROL>`, `TEMPERATURE_<ROL>` y `REASONING_<ROL>` (p. ej. `MODEL_SUPERVISOR=openai/gpt-5.5`). Los embeddings con `MODEL_EMBEDDINGS`.
 
@@ -81,7 +121,7 @@ docker compose down -v   # además borra los volúmenes: sesiones, PDFs, índice
 
 Datos y volúmenes:
 
-- `data_volume` se monta en `/app/data`. Contiene `app.db` (catálogo de PDFs), `sessions/<chat_id>/` (PDFs y base vectorial Chroma de cada sesión) y `study.db` (checkpoints de LangGraph: un estado por sesión).
+- `data_volume` se monta en `/app/data`. Contiene `app.db` (catálogo de PDFs, progreso y repasos), `sessions/<chat_id>/` (PDFs y base vectorial Chroma de cada sesión) y `study.db` (checkpoints de LangGraph: un estado por sesión, con su pizarra).
 - `models_cache` guarda la caché de modelos de Docling y HuggingFace para no descargarlos en cada arranque.
 - Para ver los datos desde el host, cambia `data_volume` por el bind mount `./data:/app/data`. El directorio debe ser escribible por el UID 10001, que es el usuario del contenedor.
 
@@ -96,14 +136,30 @@ cp .env.example .env
 .venv/bin/uvicorn api.app:app --reload --port 8000
 ```
 
+En Windows, con el mismo `.env`:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m uvicorn api.app:app --port 8000
+```
+
+El cliente arranca aparte, con Electron o solo en el navegador: ver [client/README.md](client/README.md).
+
 **Migración:** las sesiones anteriores no se migran. Si vienes de una versión con `context_study.db`, `session_study.db` o `document_processor.db`, limpia `data/` (con Docker, `docker compose down -v`) antes de arrancar.
 
-Cliente: ver [client/README.md](client/README.md).
+**Progreso anterior:** el progreso guardado antes en el checkpoint de cada sesión se ignora, porque sus temas no tenían número. La sesión sigue funcionando y el progreso se reconstruye con las evaluaciones nuevas. La pizarra y `topic_progress` no requieren migración: una sesión existente empieza con ambas vacías.
 
 ## Tests
 
 ```bash
 .venv/bin/python -m unittest discover tests
+```
+
+En Windows:
+
+```powershell
+.venv\Scripts\python -m unittest discover tests
 ```
 
 Los grafos y el LLM se simulan: los tests no necesitan claves ni red.
