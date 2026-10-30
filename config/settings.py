@@ -1,4 +1,4 @@
-"""Configuración de modelos, reglas de formato y rutas usadas por los grafos del sistema."""
+"""Configuración de modelos, límites y rutas usadas por los grafos del sistema."""
 
 import os
 from pathlib import Path
@@ -16,11 +16,9 @@ CONTEXT_MODEL = "anthropic/claude-haiku-5.5"
 
 OPENAI_API_BASE="https://openrouter.ai/api/v1"
 
-FORMAT_RULES = """
-Formato: escribe las expresiones matemáticas en texto plano o Unicode, sin LaTeX
-ni símbolos $. Ej.: 4a + 7a - 2a, x², √x, ∫2x dx, f'(x) = 3x². Usa ^ para
-exponentes complejos: e^(-t/τ). Fracciones como (a+b)/(c+d).
-"""
+# Historial de sesión: al superar el máximo se resumen los antiguos y se conservan los últimos.
+SESSION_HISTORY_MAX_MESSAGES = 10
+SESSION_HISTORY_KEEP_MESSAGES = 4
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 

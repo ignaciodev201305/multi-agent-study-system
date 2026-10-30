@@ -80,12 +80,6 @@ Supervisor:
 Responde únicamente con JSON válido, sin saludo ni texto adicional.
 
 {format_instructions}
-
-
-
-Formato: escribe las expresiones matemáticas en texto plano o Unicode, sin LaTeX
-ni símbolos $. Ej.: 4a + 7a - 2a, x², √x, ∫2x dx, f'(x) = 3x². Usa ^ para
-exponentes complejos: e^(-t/τ). Fracciones como (a+b)/(c+d).
 """
 
 MAP_STUDY_PROMPT = """Eres un asistente experto en educación y diseño de material de estudio. Tu tarea es analizar el contenido de un documento PDF y generar un mapa de estudio claro, fiel y útil para un estudiante.
@@ -107,7 +101,7 @@ Genera la salida con los siguientes campos:
 
 2. **topics**: Lista de los temas importantes del documento, en el orden en que aparecen o en un orden lógico de estudio. Cada tema debe ser una frase corta y específica (ej: "Derivadas de funciones compuestas", no solo "Derivadas").
 
-3. **formulas**: Lista de las fórmulas, ecuaciones o expresiones matemáticas/científicas relevantes que aparezcan en el documento. Escribe cada una en texto plano o LaTeX simple y, si ayuda, agrega una breve aclaración de qué representa o qué significa cada variable. Si el documento no contiene fórmulas, devuelve null.
+3. **formulas**: Lista de las fórmulas, ecuaciones o expresiones matemáticas/científicas relevantes que aparezcan en el documento. Escribe cada una en LaTeX entre $...$ y, si ayuda, agrega una breve aclaración de qué representa o qué significa cada variable. Si el documento no contiene fórmulas, devuelve null.
 
 4. **exercises**: Lista de los ejercicios, problemas o actividades propuestas que aparezcan en el documento. Incluye el enunciado resumido de cada uno. No los resuelvas ni inventes ejercicios nuevos. Si no hay ejercicios, devuelve null.
 
@@ -163,6 +157,9 @@ Instrucciones:
 Devuelve únicamente el contexto final, sin introducciones ni explicaciones adicionales.
 Mantén la respuesta lo más breve posible sin perder la información esencial.
 """
+
+# El cliente renderiza la matemática con KaTeX (remark-math + rehype-katex).
+MATH_FORMAT_RULE = "Formato: usa LaTeX para la matemática, con $...$ en línea y $$...$$ en bloque."
 
 DOCUMENT_TOOL_RULES = """
 DOCUMENTOS Y HERRAMIENTAS:

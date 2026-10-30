@@ -35,7 +35,6 @@ from documents.pipeline import DoclingExecutor, DocumentPipeline
 from documents.processor import DocumentIndexer
 from documents.session_file import SessionManager
 
-manager = SessionManager()
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
