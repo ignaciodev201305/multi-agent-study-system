@@ -100,6 +100,24 @@ def _equation(text: str):
     return _parse(text)
 
 
+def _limit(target, symbol, point):
+    """Devuelve el límite, o el par izquierda-derecha si los laterales difieren."""
+    import sympy
+
+    right = sympy.limit(target, symbol, point, "+")
+    if point.is_infinite:
+        return right
+    left = sympy.limit(target, symbol, point, "-")
+    if left.has(sympy.Limit) or right.has(sympy.Limit):
+        raise ValueError("No se pudo calcular el límite por ambos lados.")
+    # Un lado con valor complejo queda fuera del dominio real.
+    if left.is_extended_real is False or left == right or sympy.simplify(left - right) == 0:
+        return right
+    if right.is_extended_real is False:
+        return left
+    return left, right
+
+
 def run(request: dict) -> dict:
     """Ejecuta la operación pedida y devuelve su resultado."""
     import sympy
@@ -127,7 +145,14 @@ def run(request: dict) -> dict:
             result = sympy.integrate(target, symbol)
     elif operation == "limit":
         target = _parse(expression)
-        result = sympy.limit(target, variable or _single_symbol(target), _parse(str(request["point"])))
+        result = _limit(target, variable or _single_symbol(target), _parse(str(request["point"])))
+        if isinstance(result, tuple):
+            left, right = result
+            return {
+                "result": f"No existe: por la izquierda {left}, por la derecha {right}",
+                "latex": rf"\text{{No existe: }} {sympy.latex(left)} \text{{ por la izquierda, }} "
+                         rf"{sympy.latex(right)} \text{{ por la derecha}}",
+            }
     elif operation == "solve":
         equations = [_equation(part) for part in expression.split(",")]
         symbols = [variable] if variable else None

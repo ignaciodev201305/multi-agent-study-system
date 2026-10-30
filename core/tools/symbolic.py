@@ -55,6 +55,7 @@ async def math_tool(
     - diff: derivada respecto de variable (order para derivadas de orden n).
     - integrate: primitiva; con lower y upper, integral definida.
     - limit: límite cuando variable tiende a point (usa oo para infinito).
+      Si los límites laterales difieren, responde que no existe y da ambos valores.
     - solve: ecuaciones 'x^2 - 4 = 0' (varias separadas por coma), despejando variable.
     - evaluate: valor numérico; substitutions como 'x=2, y=1/3'.
     """

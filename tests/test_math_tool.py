@@ -45,6 +45,25 @@ class MathToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Resultado: 9", await self.call(operation="integrate", expression="2*x", variable="x", lower=0, upper=3))
         self.assertIn("Resultado: 1", await self.call(operation="limit", expression="sin(x)/x", variable="x", point=0))
 
+    async def test_limit_with_different_sides_does_not_exist(self):
+        result = await self.call(operation="limit", expression="1/x", variable="x", point=0)
+        self.assertIn("No existe", result)
+        self.assertIn("izquierda -oo", result)
+        self.assertIn("derecha oo", result)
+        result = await self.call(operation="limit", expression="Abs(x)/x", variable="x", point=0)
+        self.assertIn("izquierda -1", result)
+        self.assertIn("derecha 1", result)
+
+    async def test_limit_with_equal_sides_keeps_value(self):
+        self.assertIn("Resultado: oo", await self.call(operation="limit", expression="1/x^2", variable="x", point=0))
+
+    async def test_limit_ignores_side_outside_real_domain(self):
+        result = await self.call(operation="limit", expression="1/sqrt(x)", variable="x", point=0)
+        self.assertIn("Resultado: oo", result)
+
+    async def test_limit_at_infinity(self):
+        self.assertIn("Resultado: 0", await self.call(operation="limit", expression="1/x", variable="x", point="oo"))
+
     async def test_undefined_function_is_error_not_wrong_result(self):
         result = await self.call(operation="diff", expression="f(x)^2", variable="x")
         self.assertTrue(result.startswith("Error:"), result)
