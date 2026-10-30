@@ -7,16 +7,28 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-CONTEXT_STUDY_MODEL = "google/gemini-3.1-flash-lite"
-CONTEXT_STUDY_TEMPERATURE = 0.0
 
-SUPERVISOR_MODEL = "x-ai/grok-4.7"
-SUPERVISOR_TEMPERATURE = 0.0
 
-SUBAGENT_MODEL = "deepseek/deepseek-v4.1-flash"
-SUBAGENT_TEMPERATURE = 0.2
+def _model_role(role: str, model: str, temperature: float, reasoning_effort: str | None = None) -> dict:
+    """Modelo de un rol con override por entorno: MODEL_<ROL>, TEMPERATURE_<ROL>, REASONING_<ROL>."""
+    key = role.upper()
+    return {
+        "model": os.environ.get(f"MODEL_{key}", model),
+        "temperature": float(os.environ.get(f"TEMPERATURE_{key}", temperature)),
+        "reasoning_effort": os.environ.get(f"REASONING_{key}", reasoning_effort) or None,
+    }
 
-CONTEXT_MODEL = "anthropic/claude-haiku-5.5"
+
+# Registro de modelos por rol: cada parte del sistema pide un rol, no un nombre de modelo.
+MODEL_ROLES = {
+    "context_classifier": _model_role("context_classifier", "google/gemini-3.1-flash-lite", 0.0, "medium"),
+    "factory": _model_role("factory", "google/gemini-3.1-flash-lite", 0.0, "medium"),
+    "supervisor": _model_role("supervisor", "x-ai/grok-4.7", 0.0),
+    "subagent_light": _model_role("subagent_light", "deepseek/deepseek-v4.1-flash", 0.2),
+    "subagent_heavy": _model_role("subagent_heavy", "deepseek/deepseek-v4.1-flash", 0.2),
+    "summarizer": _model_role("summarizer", "anthropic/claude-haiku-5.5", 0.0),
+}
+EMBEDDINGS_MODEL = os.environ.get("MODEL_EMBEDDINGS", "qwen/qwen3-embedding-8b")
 
 OPENAI_API_BASE="https://openrouter.ai/api/v1"
 

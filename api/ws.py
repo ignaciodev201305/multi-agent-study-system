@@ -19,7 +19,7 @@ from api.security import (
     websocket_token,
 )
 from config.settings import WS_MAX_MESSAGE_CHARS
-from core.astream import execute_astream_graph
+from core.streaming import execute_astream_graph
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

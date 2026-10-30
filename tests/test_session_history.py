@@ -7,8 +7,8 @@ from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from config.settings import SESSION_HISTORY_KEEP_MESSAGES, SESSION_HISTORY_MAX_MESSAGES
-from core.astream import token_text
 from core.graphs import SessionStudyGraph
+from core.streaming import token_text
 
 
 class _FakeChain:
@@ -34,7 +34,7 @@ class _FakeSupervisor:
 
 class SessionHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        with patch("core.graphs.BuildModel"), patch("core.graphs.ChainBuilder"):
+        with patch("core.graphs.session.build_model"), patch("core.graphs.session.ChainBuilder"):
             self.session_graph = SessionStudyGraph()
         self.chain = _FakeChain()
         self.session_graph.chain_builder.build_chain.return_value = self.chain

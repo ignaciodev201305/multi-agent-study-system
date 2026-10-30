@@ -6,7 +6,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from documents.document_repository import DocumentRepository
+from documents.repository import DocumentRepository
 from documents.pipeline import _pages_from_metadata, split_into_blocks
 
 

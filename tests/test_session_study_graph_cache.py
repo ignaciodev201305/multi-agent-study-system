@@ -15,9 +15,8 @@ class _MultiAgentContext:
 class SessionStudyGraphCacheTests(unittest.TestCase):
     def make_graph(self, max_entries):
         with (
-            patch("core.graphs.BuildModel"),
-            patch("core.graphs.ChainBuilder"),
-            patch("core.graphs.ToolsBuilder"),
+            patch("core.graphs.session.build_model"),
+            patch("core.graphs.session.ChainBuilder"),
         ):
             graph = SessionStudyGraph()
         graph.multi_agent_system_cache_max_entries = max_entries
@@ -27,7 +26,7 @@ class SessionStudyGraphCacheTests(unittest.TestCase):
         graph = self.make_graph(max_entries=2)
         context = _MultiAgentContext()
 
-        with patch("core.graphs.MultiAgentSystemBuilder") as builder:
+        with patch("core.graphs.session.MultiAgentSystemBuilder") as builder:
             builder.return_value.build_supervisor.side_effect = lambda _: object()
             supervisor_a = graph._get_or_build_multi_agent_system("a", context)
             graph._get_or_build_multi_agent_system("b", context)
@@ -44,7 +43,7 @@ class SessionStudyGraphCacheTests(unittest.TestCase):
         graph = self.make_graph(max_entries=2)
         context = _MultiAgentContext()
 
-        with patch("core.graphs.MultiAgentSystemBuilder") as builder:
+        with patch("core.graphs.session.MultiAgentSystemBuilder") as builder:
             builder.return_value.build_supervisor.side_effect = lambda _: object()
             original = graph._get_or_build_multi_agent_system("session", context)
             graph._get_or_build_multi_agent_system("other-a", context)
@@ -57,7 +56,7 @@ class SessionStudyGraphCacheTests(unittest.TestCase):
 
     def test_deleting_session_removes_its_cached_supervisor(self):
         graph = self.make_graph(max_entries=2)
-        with patch("core.graphs.MultiAgentSystemBuilder") as builder:
+        with patch("core.graphs.session.MultiAgentSystemBuilder") as builder:
             builder.return_value.build_supervisor.return_value = object()
             graph._get_or_build_multi_agent_system("session", _MultiAgentContext())
 

@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
 
 from config import settings
-from config.settings import WS_MAX_TURNS_PER_MINUTE
+from config.settings import MAX_PDF_SIZE_BYTES, WS_MAX_TURNS_PER_MINUTE
 
 THREAD_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,100}")
 
@@ -91,3 +91,66 @@ class TurnRateLimiter:
 
     def forget(self, thread_id: str) -> None:
         self._turns.pop(thread_id, None)
+
+
+UPLOAD_MULTIPART_OVERHEAD_BYTES = 64 * 1024
+MAX_UPLOAD_REQUEST_BYTES = MAX_PDF_SIZE_BYTES + UPLOAD_MULTIPART_OVERHEAD_BYTES
+
+
+class _UploadRequestTooLarge(Exception):
+    """Interrumpe el parseo cuando el cuerpo supera el límite de subida."""
+
+
+async def _send_upload_too_large(scope, receive, send) -> None:
+    response = JSONResponse(
+        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+        content={"detail": "El pdf supera el tamaño maximo"},
+    )
+    await response(scope, receive, send)
+
+
+class PdfUploadBodyLimitMiddleware:
+    """Limita el cuerpo multipart antes de que FastAPI parsee o almacene el PDF."""
+
+    def __init__(self, app, *, max_body_bytes: int):
+        self.app = app
+        self.max_body_bytes = max_body_bytes
+
+    async def __call__(self, scope, receive, send):
+        is_pdf_upload = (
+            scope.get("type") == "http"
+            and scope.get("method") == "POST"
+            and re.fullmatch(r"/chats/[^/]+/pdfs/?", scope.get("path", "")) is not None
+        )
+        if not is_pdf_upload:
+            await self.app(scope, receive, send)
+            return
+
+        content_lengths = [
+            value
+            for name, value in scope.get("headers", [])
+            if name.lower() == b"content-length"
+        ]
+        try:
+            declared_lengths = [int(value) for value in content_lengths]
+        except ValueError:
+            declared_lengths = []
+        if declared_lengths and max(declared_lengths) > self.max_body_bytes:
+            await _send_upload_too_large(scope, receive, send)
+            return
+
+        received_bytes = 0
+
+        async def limited_receive():
+            nonlocal received_bytes
+            message = await receive()
+            if message.get("type") == "http.request":
+                received_bytes += len(message.get("body", b""))
+                if received_bytes > self.max_body_bytes:
+                    raise _UploadRequestTooLarge
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except _UploadRequestTooLarge:
+            await _send_upload_too_large(scope, receive, send)

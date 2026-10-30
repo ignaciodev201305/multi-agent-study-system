@@ -5,9 +5,8 @@ import logging
 from pathlib import Path
 
 from config.settings import DATA_DIRECTORY, DOCUMENT_MAX_ATTEMPTS, PDF_DIRECTORY
-from documents.document_repository import DocumentRepository
-from documents.pipeline import DocumentPipeline
-from documents.processor import DocumentIndexer
+from documents.repository import DocumentRepository
+from documents.pipeline import DocumentIndexer, DocumentPipeline
 
 logger = logging.getLogger(__name__)
 

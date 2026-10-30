@@ -18,11 +18,11 @@ Los PDFs se procesan en segundo plano: la subida responde con estado `queued` y 
 
 | Ruta | Contenido |
 |---|---|
-| `api/` | API FastAPI. `app.py` expone el WebSocket de sesión (`/ws/{thread_id}`), los endpoints `GET` y `POST /chats/{chat_id}/pdfs` y `DELETE /chats/{chat_id}`. En el arranque compila los grafos y lanza los workers de documentos. `cors.py` define los orígenes permitidos. |
-| `config/` | `settings.py`: modelos y temperaturas, reglas de formato, rutas de datos y límites de subida (20 MB por PDF, 20 PDFs y 200 MB por sesión). |
-| `core/` | Grafos y agentes. `graphs.py` define los grafos de contexto, sesión y procesamiento de documentos. `agent.py` crea el supervisor y los subagentes y `tools.py` define la búsqueda web y la búsqueda en PDFs. `prompts.py`, `schemas.py` y `states.py` contienen prompts, modelos Pydantic y estados. `llm.py` y `chain.py` construyen modelos y cadenas, `reducer.py` acota el historial y `astream.py` envía los eventos por WebSocket. |
-| `documents/` | Procesamiento de PDFs. `processor.py` extrae con Docling e indexa en Chroma. `document_repository.py` guarda el catálogo en SQLite. `document_worker.py` procesa la cola, `document_cleanup.py` elimina archivos y vectores huérfanos y `session_file.py` gestiona los directorios de cada sesión. |
-| `tests/` | Pruebas `unittest` de la caché LRU de `SessionStudyGraph`. |
+| `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats/{id}/messages`, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
+| `config/` | `settings.py`: registro de modelos por rol (`MODEL_ROLES`, con override por entorno), rutas de datos y límites. |
+| `core/` | Grafos y agentes. `graphs/` (contexto y sesión), `agents/` (construcción del supervisor y subagentes), `prompts/` (por grafo), `tools/` (registro, búsqueda web y en documentos). `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
+| `documents/` | Procesamiento de PDFs en segundo plano. `pipeline.py`: Docling en un proceso aparte, índice Chroma y resumen por documento. `repository.py`: catálogo SQLite (estado y resumen de cada documento). `worker.py` procesa la cola, `cleanup.py` elimina archivos y vectores huérfanos y `storage.py` borra los directorios de cada sesión. |
+| `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos y caché LRU de supervisores). |
 | `client/` | Cliente Electron, React y Vite. Ver [client/README.md](client/README.md). |
 
 Archivos de la raíz:
@@ -51,6 +51,8 @@ cp .env.example .env
 | `APP_TOKEN` | Token local obligatorio. La API lo exige en HTTP (`Authorization: Bearer`) y en el WebSocket (subprotocolo `token.<APP_TOKEN>`); sin él no arranca. Genéralo con `python -c "import secrets; print(secrets.token_hex(32))"` y pégalo en el campo «Token local» de la pantalla de inicio del cliente. |
 
 Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000) y `WS_MAX_TURNS_PER_MINUTE` (20).
+
+Modelos por rol (`context_classifier`, `factory`, `supervisor`, `subagent_light`, `subagent_heavy`, `summarizer`): se cambian sin tocar código con `MODEL_<ROL>`, `TEMPERATURE_<ROL>` y `REASONING_<ROL>` (p. ej. `MODEL_SUPERVISOR=openai/gpt-5.5`). Los embeddings con `MODEL_EMBEDDINGS`.
 
 ## Levantar con Docker
 

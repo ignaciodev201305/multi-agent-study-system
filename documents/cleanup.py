@@ -3,8 +3,8 @@
 import logging
 from pathlib import Path
 
-from documents.document_repository import DocumentRepository
-from documents.processor import DocumentIndexer
+from documents.repository import DocumentRepository
+from documents.pipeline import DocumentIndexer
 
 logger = logging.getLogger(__name__)
 

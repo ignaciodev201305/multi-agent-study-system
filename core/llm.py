@@ -1,24 +1,35 @@
-"""Creación de las instancias de modelos LLM que usan los agentes y grafos."""
+"""Creación de modelos LLM y de embeddings a partir del registro de roles."""
 
 import logging
 
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from config.settings import OPENAI_API_BASE
-
-load_dotenv()
+from config.settings import EMBEDDINGS_MODEL, MODEL_ROLES, OPENAI_API_BASE
 
 logger = logging.getLogger(__name__)
 
 
-class BuildModel():
-    """Construye modelos ChatOpenAI apuntando al endpoint configurado."""
-    def build_model(self,  model: str, temperature: float, reasoning_effort: str = None ):
-        try:
-            if not reasoning_effort:
-                return ChatOpenAI(model=model, temperature=temperature, openai_api_base=OPENAI_API_BASE)
-            return ChatOpenAI(model=model, temperature=temperature, reasoning_effort=reasoning_effort, openai_api_base=OPENAI_API_BASE)
-        except Exception:
-            logger.exception("Error al instanciar el modelo %s", model)
-            return None
+def build_model(role: str):
+    """Construye el ChatOpenAI configurado para un rol de MODEL_ROLES."""
+    spec = MODEL_ROLES[role]
+    kwargs = {
+        "model": spec["model"],
+        "temperature": spec["temperature"],
+        "openai_api_base": OPENAI_API_BASE,
+    }
+    if spec["reasoning_effort"]:
+        kwargs["reasoning_effort"] = spec["reasoning_effort"]
+    try:
+        return ChatOpenAI(**kwargs)
+    except Exception:
+        logger.exception("Error al instanciar el modelo %s (rol %s)", spec["model"], role)
+        return None
+
+
+def build_embeddings() -> OpenAIEmbeddings:
+    """Embeddings del vector store; el modelo se configura con MODEL_EMBEDDINGS."""
+    return OpenAIEmbeddings(
+        model=EMBEDDINGS_MODEL,
+        openai_api_base=OPENAI_API_BASE,
+        check_embedding_ctx_length=False,
+    )
