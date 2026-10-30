@@ -61,4 +61,17 @@ export type BackendEvent =
   | { type: 'human_input_request'; content: string }
   | { type: 'context_processed'; content: string; title_session?: string }
   | { type: 'error'; code: string; content: string; retryable: boolean }
-  | { type: 'agent_response'; content: string };
+  | { type: 'agent_response'; content: string }
+  | { type: 'status'; content: string };
+
+export interface ServerChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatSnapshot {
+  chat_id: string;
+  phase: StudyPhase;
+  pending_question: string | null;
+  messages: ServerChatMessage[];
+}

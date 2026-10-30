@@ -1,5 +1,6 @@
 
 """Prompts del clasificador de contexto, la fábrica del sistema multiagente, el mapa de estudio y los resúmenes de documentos."""
+
 CONTEXT_CLASSIFIER_PROMPT = """
 Eres un evaluador de solicitudes de estudio. Solo decides si ya hay información suficiente para empezar; no planificas ni propones temario.
 Tu criterio es "suficiente para empezar", no "completo". Ante la duda, aprueba.
@@ -119,37 +120,17 @@ Genera la salida con los siguientes campos:
 - Ignora ruido de la extracción (números de página, encabezados o pies repetidos, texto cortado, referencias a imágenes).
 - Si un campo opcional no aplica al documento, devuélvelo como null en lugar de inventar contenido.
 """
-SUMMARY_DOCUMENTS_CONTEXT_PROMPT = """Eres un constructor de contexto para un asistente de estudio. Sintetizas el material que el usuario subió en un único contexto limpio y fiel, que otro asistente usará como referencia para responderle.
-## Estado de las fuentes
-- map_study_flag: {map_study_flag}
-- document_rag_flag: {document_rag_flag}
-(True = la fuente llegó con contenido; False = no llegó o está vacía.)
+PARTIAL_SUMMARY_PROMPT = """Resume la parte {index} de {total} de un documento de estudio.
 
-## Fuente principal: Mapa de estudio
-Estructura generada a partir del PDF del usuario (resumen, temas, fórmulas, ejercicios y conceptos clave).
-{map_study}
+<documento>
+{block}
+</documento>
 
-## Fuente complementaria: Fragmentos de documentos
-{rag_context}
-
-## Contexto anterior
-Contexto que se construyó antes en esta sesión. Sirve de base para no perder información que los fragmentos actuales ya no incluyen.
-{previous_system_message}
-
-## Instrucciones
-- La PRIMERA línea de tu respuesta debe ser exactamente: "Fuentes recibidas: X", donde X se arma SOLO con las banderas: incluye "Mapa de estudio" si map_study_flag es True e incluye "Fragmentos" si document_rag_flag es True, separados por coma. Si ambas son False, escribe "Fuentes recibidas: ninguna". No uses el contenido de las fuentes para decidir esto.
-- Si map_study_flag es False, ignora la sección "Mapa de estudio" aunque tenga texto, y construye el contexto con los fragmentos y el contexto anterior.
-- Si document_rag_flag es False, ignora la sección "Fragmentos de documentos" y construye el contexto con el mapa de estudio y el contexto anterior.
-- Usa el mapa de estudio como eje: conserva su estructura, el orden de sus temas, sus conceptos clave, fórmulas y ejercicios.
-- Usa los fragmentos solo para complementar los temas del mapa con detalles, aclaraciones o ejemplos. Si traen algo que el mapa no cubre, agrégalo al final en una sección "Material adicional (fragmentos)".
-- Integra el contexto anterior: conserva lo que siga siendo relevante y actualiza lo que las fuentes actuales corrijan o amplíen.
-- Si hay contradicciones, el orden de prioridad es: mapa de estudio, fragmentos actuales, contexto anterior.
-- Usa SOLO la información de las fuentes; no agregues nada externo ni inventes temas, fórmulas o ejercicios.
-- Conserva fielmente cifras, fechas, nombres, términos técnicos y fórmulas tal cual aparecen.
-- Elimina duplicados y ruido de PDF (encabezados, pies de página, números de página).
-- No menciones detalles técnicos internos como indexación, embeddings o base vectorial.
-- Responde solo con la línea "Fuentes recibidas" seguida del contexto, sin saludos ni explicaciones.
-- MAXIMO 400 PALABRAS (incluida la línea inicial). Si no cabe todo, prioriza el mapa de estudio y recorta primero el material adicional."""
+- Conserva temas, definiciones, fórmulas, ejercicios, cifras y términos técnicos tal cual aparecen.
+- No agregues información externa ni resuelvas ejercicios.
+- Ignora ruido de la extracción (números de página, encabezados repetidos).
+- Responde solo con el resumen, en el idioma del documento, en no más de 800 palabras.
+"""
 
 # Prompt del resumidor del historial de messages del grafo session_study
 SUMMARY_PROMPT = """

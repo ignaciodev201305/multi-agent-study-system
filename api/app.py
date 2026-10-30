@@ -1,8 +1,7 @@
-"""API FastAPI con el WebSocket de sesión y los endpoints de chats y PDFs."""
+"""API FastAPI: wiring del WebSocket de sesión y endpoints de chats y PDFs."""
 
 import asyncio
 import hashlib
-import json
 import logging
 import re
 from contextlib import asynccontextmanager
@@ -10,22 +9,12 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import (
-    FastAPI,
-    File,
-    Form,
-    HTTPException,
-    UploadFile,
-    WebSocket,
-    WebSocketDisconnect,
-    WebSocketException,
-    status,
-)
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
-from langchain.messages import HumanMessage
-from langgraph.types import Command
+from langchain.messages import AIMessage, HumanMessage
 
-from api.cors import ALLOWED_ORIGINS, ALLOWED_ORIGIN_REGEX, configure_cors
+from api.cors import configure_cors
+from api.ws import SessionRegistry, router as ws_router
 from config.settings import (
     APP_DATABASE_PATH,
     CHROMA_DIRECTORY,
@@ -38,11 +27,12 @@ from config.settings import (
     PDF_DIRECTORY,
     UPLOAD_CHUNK_SIZE,
 )
-from core.astream import execute_astream_graph
-from core.graphs import ContextStudyGraph, DocumentProcessorGraph, SessionStudyGraph
+from core.graphs import ContextStudyGraph, SessionStudyGraph
 from documents.document_cleanup import cleanup_orphan_documents
 from documents.document_repository import DocumentRepository
 from documents.document_worker import document_worker
+from documents.pipeline import DoclingExecutor, DocumentPipeline
+from documents.processor import DocumentIndexer
 from documents.session_file import SessionManager
 
 manager = SessionManager()
@@ -52,9 +42,6 @@ logging.basicConfig(
     format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
     datefmt="%H:%M:%S",
 )
-
-WS_IDLE_TIMEOUT_SECONDS = 300
-WS_LOCK_WAIT_TIMEOUT_SECONDS = 5
 
 UPLOAD_MULTIPART_OVERHEAD_BYTES = 64 * 1024
 MAX_UPLOAD_REQUEST_BYTES = MAX_PDF_SIZE_BYTES + UPLOAD_MULTIPART_OVERHEAD_BYTES
@@ -122,17 +109,18 @@ class _PdfUploadBodyLimitMiddleware:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Compila los grafos e inicia/recupera el procesamiento asíncrono de PDFs."""
-    app.state.websocket_locks = {}
-    app.state.websocket_locks_guard = asyncio.Lock()
+    app.state.session_registry = SessionRegistry()
     app.state.document_repository = await DocumentRepository.open(APP_DATABASE_PATH)
     app.state.document_queue = asyncio.Queue()
     app.state.document_workers = []
+    app.state.docling_executor = None
 
     try:
         app.state.graph_context_study = await ContextStudyGraph().compile_graph()
         app.state.session_study_graph_instance = SessionStudyGraph()
         app.state.graph_session_study = await app.state.session_study_graph_instance.compile_graph()
-        app.state.graph_document_processor = await DocumentProcessorGraph().compile_graph()
+        app.state.docling_executor = DoclingExecutor()
+        document_pipeline = DocumentPipeline(app.state.docling_executor, DocumentIndexer)
 
         await cleanup_orphan_documents(
             app.state.document_repository,
@@ -151,7 +139,7 @@ async def lifespan(app: FastAPI):
                 document_worker(
                     app.state.document_queue,
                     app.state.document_repository,
-                    app.state.graph_document_processor,
+                    document_pipeline,
                 ),
                 name=f"document-worker-{index}",
             )
@@ -164,11 +152,13 @@ async def lifespan(app: FastAPI):
         if app.state.document_workers:
             await asyncio.gather(*app.state.document_workers, return_exceptions=True)
 
+        if app.state.docling_executor is not None:
+            app.state.docling_executor.shutdown()
+
         await app.state.document_repository.requeue_processing(DOCUMENT_MAX_ATTEMPTS)
         for graph_name in (
             "graph_context_study",
             "graph_session_study",
-            "graph_document_processor",
         ):
             graph = getattr(app.state, graph_name, None)
             if graph is not None:
@@ -185,337 +175,78 @@ app.add_middleware(
 configure_cors(app)
 
 
-class _WebSocketIdleTimeout(Exception):
-    """Señala que el cliente no envió un mensaje dentro del tiempo permitido."""
+app.include_router(ws_router)
 
 
-async def _send_ws_error(
-    websocket: WebSocket,
-    *,
-    code: str,
-    content: str,
-    retryable: bool,
-) -> None:
-    """Envía un error con el contrato común del WebSocket si sigue conectado."""
-    try:
-        await websocket.send_json({
-            "type": "error",
-            "code": code,
-            "content": content,
-            "retryable": retryable,
-        })
-    except (OSError, RuntimeError, WebSocketDisconnect):
-        pass
+def _validate_chat_id(chat_id: str) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", chat_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="chat_id_invalido",
+        )
 
 
-async def _close_websocket(websocket: WebSocket, *, code: int, reason: str) -> None:
-    try:
-        await websocket.close(code=code, reason=reason)
-    except (OSError, RuntimeError, WebSocketDisconnect):
-        pass
+@app.get("/chats/{chat_id}/messages")
+async def list_chat_messages_endpoint(chat_id: str):
+    """Devuelve el estado checkpointeado para que el cliente se resincronice al reconectar."""
+    _validate_chat_id(chat_id)
+    config = {"configurable": {"thread_id": chat_id}}
 
-
-async def _receive_content(websocket: WebSocket) -> str:
-    """Espera un mensaje JSON válido, informando payloads incorrectos al cliente."""
-    while True:
-        try:
-            data = await asyncio.wait_for(
-                websocket.receive_json(),
-                timeout=WS_IDLE_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError as error:
-            raise _WebSocketIdleTimeout from error
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            await _send_ws_error(
-                websocket,
-                code="invalid_message",
-                content="El mensaje debe ser un JSON válido con un campo 'content' de texto no vacío.",
-                retryable=True,
-            )
-            continue
-
-        content = data.get("content") if isinstance(data, dict) else None
-        if not isinstance(content, str) or not content.strip():
-            await _send_ws_error(
-                websocket,
-                code="invalid_message",
-                content="El mensaje debe incluir un campo 'content' de texto no vacío.",
-                retryable=True,
-            )
-            continue
-
-        return content.strip()
-
-
-async def _get_websocket_lock(thread_id: str) -> asyncio.Lock:
-    """Obtiene el lock por sesión y registra también las conexiones en espera."""
-    async with app.state.websocket_locks_guard:
-        entry = app.state.websocket_locks.get(thread_id)
-        if entry is None:
-            entry = {"lock": asyncio.Lock(), "references": 0}
-            app.state.websocket_locks[thread_id] = entry
-        entry["references"] += 1
-        return entry["lock"]
-
-
-async def _release_websocket_lock(
-    thread_id: str,
-    lock: asyncio.Lock,
-    *,
-    acquired: bool,
-) -> None:
-    """Libera el lock y elimina su entrada cuando ya no hay conexiones asociadas."""
-    if acquired:
-        lock.release()
-
-    async with app.state.websocket_locks_guard:
-        entry = app.state.websocket_locks.get(thread_id)
-        if entry is None or entry["lock"] is not lock:
-            return
-
-        entry["references"] -= 1
-        if entry["references"] == 0:
-            app.state.websocket_locks.pop(thread_id, None)
-
-
-async def _run_websocket_session(websocket: WebSocket, thread_id: str) -> None:
-    """Contextualiza la sesión y procesa sus mensajes mientras el cliente esté conectado."""
-    config = {"configurable": {"thread_id": thread_id}}
-    graph_context_study = app.state.graph_context_study
-
-    message = await _receive_content(websocket)
-
-    snapshot = await graph_context_study.aget_state(config)
-    skip_context = snapshot.values.get("multi_agent_system") is not None
-
-    message_pending = None
-    # Si ya existe contexto, conserva el mensaje para el grafo de sesión.
-    if skip_context:
-        context_study = snapshot.values
-        multi_agent_system = snapshot.values["multi_agent_system"]
-        message_pending = message
+    context_snapshot = await app.state.graph_context_study.aget_state(config)
+    if context_snapshot.values.get("multi_agent_system") is not None:
+        phase = "study"
+    elif context_snapshot.interrupts:
+        phase = "clarification"
     else:
-        # Si hay un interrupt, faltó contexto por parte del usuario.
-        graph_input = Command(resume=message) if snapshot.interrupts else {
-            "messages": [HumanMessage(content=message)]
-        }
-        context_study, interrupt_info = await execute_astream_graph(
-            graph_context_study,
-            websocket,
-            graph_input,
-            config,
-        )
-
-        while interrupt_info:
-            await websocket.send_json({
-                "type": "human_input_request",
-                "content": interrupt_info[0].value,
-            })
-
-            message = await _receive_content(websocket)
-            context_study, interrupt_info = await execute_astream_graph(
-                graph_context_study,
-                websocket,
-                Command(resume=message),
-                config,
-            )
-
-        multi_agent_system = context_study.get("multi_agent_system")
-
-    if multi_agent_system is None:
-        await _send_ws_error(
-            websocket,
-            code="context_failed",
-            content="No se pudo crear el contexto de estudio. Puedes enviar otro mensaje para intentarlo de nuevo.",
-            retryable=True,
-        )
-        await _close_websocket(
-            websocket,
-            code=status.WS_1011_INTERNAL_ERROR,
-            reason="context_failed",
-        )
-        return
-
-    if not skip_context:
-        await websocket.send_json({
-            "type": "context_processed",
-            "content": "Contexto procesado",
-            "title_session": context_study["classified_context"].title_session,
-        })
-
-    while True:
-        # Si hay un mensaje pendiente por reconexión, úsalo antes de esperar otro.
-        if message_pending is not None:
-            message = message_pending
-            message_pending = None
-        else:
-            message = await _receive_content(websocket)
-
-        documents_graph_state = (
-            await app.state.graph_document_processor.aget_state(config)
-        ).values
-        graph_input = {
-            "messages": [HumanMessage(content=message)],
-            "multi_agent_system_context": multi_agent_system,
-            "document_rag_flag": documents_graph_state.get("document_rag_flag", False),
-            "rag_context": documents_graph_state.get("rag_context", []),
-            "map_study_flag": documents_graph_state.get("map_study_flag", False),
-            "map_study": documents_graph_state.get("map_study"),
-        }
-        logger.info("turn start thread_id=%s", thread_id)
-        session_study, _ = await execute_astream_graph(
-            app.state.graph_session_study,
-            websocket,
-            graph_input,
-            config,
-        )
-        logger.info("turn end thread_id=%s", thread_id)
-        await websocket.send_json({
-            "type": "agent_response",
-            "content": session_study["messages"][-1].content,
-        })
-
-
-@app.websocket("/ws/{thread_id}")
-async def websocket_endpoint(websocket: WebSocket, thread_id: str):
-    """Valida y serializa las conexiones WebSocket de cada sesión."""
-    origin = websocket.headers.get("origin")
-    origin_allowed = origin in ALLOWED_ORIGINS or (
-        origin is not None and re.fullmatch(ALLOWED_ORIGIN_REGEX, origin) is not None
+        phase = "setup"
+    pending_question = (
+        context_snapshot.interrupts[0].value
+        if phase == "clarification"
+        else None
     )
-    if not origin_allowed:
-        await websocket.close(
-            code=status.WS_1008_POLICY_VIOLATION,
-            reason="origin_not_allowed",
-        )
-        return
 
-    await websocket.accept()
-
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", thread_id):
-        await _send_ws_error(
-            websocket,
-            code="invalid_thread_id",
-            content="El identificador de sesión no es válido.",
-            retryable=False,
-        )
-        await _close_websocket(
-            websocket,
-            code=status.WS_1008_POLICY_VIOLATION,
-            reason="invalid_thread_id",
-        )
-        return
-
-    lock = await _get_websocket_lock(thread_id)
-    lock_acquired = False
-    try:
-        try:
-            await asyncio.wait_for(
-                lock.acquire(),
-                timeout=WS_LOCK_WAIT_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            await _send_ws_error(
-                websocket,
-                code="session_busy",
-                content="Ya hay una conexión activa para esta sesión. Inténtalo de nuevo.",
-                retryable=True,
-            )
-            logger.warning("ws session_busy thread_id=%s", thread_id)
-            await _close_websocket(
-                websocket,
-                code=status.WS_1013_TRY_AGAIN_LATER,
-                reason="session_busy",
-            )
-            return
-
-        lock_acquired = True
-        logger.info("ws lock acquired thread_id=%s", thread_id)
-        await _run_websocket_session(websocket, thread_id)
-    except WebSocketDisconnect:
-        # La desconexión del cliente es un cierre esperado.
-        logger.info("ws client closed thread_id=%s", thread_id)
-    except _WebSocketIdleTimeout:
-        await _send_ws_error(
-            websocket,
-            code="idle_timeout",
-            content="La conexión se cerró por inactividad. Vuelve a conectarte para continuar.",
-            retryable=True,
-        )
-        await _close_websocket(
-            websocket,
-            code=status.WS_1000_NORMAL_CLOSURE,
-            reason="idle_timeout",
-        )
-    except WebSocketException as error:
-        logger.warning(
-            "Excepción WebSocket en thread_id=%s (code=%s)",
-            thread_id,
-            error.code,
-        )
-        await _send_ws_error(
-            websocket,
-            code="websocket_error",
-            content="Ocurrió un error en la conexión WebSocket.",
-            retryable=True,
-        )
-        await _close_websocket(
-            websocket,
-            code=status.WS_1011_INTERNAL_ERROR,
-            reason="websocket_error",
-        )
-    except Exception:
-        logger.exception("Error procesando la sesión WebSocket thread_id=%s", thread_id)
-        await _send_ws_error(
-            websocket,
-            code="internal_error",
-            content="No se pudo procesar el mensaje. Inténtalo de nuevo.",
-            retryable=True,
-        )
-        await _close_websocket(
-            websocket,
-            code=status.WS_1011_INTERNAL_ERROR,
-            reason="internal_error",
-        )
-    finally:
-        await _release_websocket_lock(
-            thread_id,
-            lock,
-            acquired=lock_acquired,
-        )
-        if lock_acquired:
-            logger.info("ws lock released thread_id=%s", thread_id)
-
+    session_snapshot = await app.state.graph_session_study.aget_state(config)
+    messages = [
+        {
+            "role": "user" if isinstance(message, HumanMessage) else "assistant",
+            "content": message.content,
+        }
+        for message in session_snapshot.values.get("messages", [])
+        if isinstance(message, (HumanMessage, AIMessage)) and isinstance(message.content, str)
+    ]
+    return {
+        "chat_id": chat_id,
+        "phase": phase,
+        "pending_question": pending_question,
+        "messages": messages,
+    }
 
 
 @app.delete("/chats/{chat_id}")
 async def delete_chat_endpoint(chat_id: str):
     """Elimina los checkpoints y los archivos de una sesión."""
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", chat_id):
+    _validate_chat_id(chat_id)
+
+    # No espera al worker: borrar las filas cancela el documento en curso, que
+    # descarta su resultado al no poder guardarlo (ver document_worker).
+    try:
+        await app.state.document_repository.delete_chat(chat_id)
+        for graph in (
+            app.state.graph_context_study,
+            app.state.graph_session_study,
+        ):
+            await graph.checkpointer.adelete_thread(chat_id)
+
+        session_manager = SessionManager()
+        session_manager.session_path = str(Path(DATA_DIRECTORY) / chat_id)
+        session_manager.remove_session(chat_id)
+        app.state.session_study_graph_instance.remove_session_cache_entry(chat_id)
+    except Exception:
+        logger.exception("No se pudo eliminar la sesión chat_id=%s", chat_id)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="chat_id_invalido"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No se pudo eliminar la sesión.",
         )
-
-    async with app.state.document_repository.lock_chat(chat_id):
-        try:
-            for graph in (
-                app.state.graph_context_study,
-                app.state.graph_session_study,
-                app.state.graph_document_processor,
-            ):
-                await graph.checkpointer.adelete_thread(chat_id)
-
-            session_manager = SessionManager()
-            session_manager.session_path = str(Path(DATA_DIRECTORY) / chat_id)
-            session_manager.remove_session(chat_id)
-            await app.state.document_repository.delete_chat(chat_id)
-            app.state.session_study_graph_instance.remove_session_cache_entry(chat_id)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="No se pudo eliminar la sesion: " + str(e)
-            )
 
     return {"chat_id": chat_id, "status": "deleted"}
 
@@ -523,11 +254,7 @@ async def delete_chat_endpoint(chat_id: str):
 @app.get("/chats/{chat_id}/pdfs")
 async def list_chat_pdfs_endpoint(chat_id: str):
     """Lista los documentos de una sesión junto con su estado de procesamiento."""
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", chat_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="chat_id_invalido",
-        )
+    _validate_chat_id(chat_id)
 
     documents = await app.state.document_repository.list_for_chat(chat_id)
     return {"chat_id": chat_id, "documents": documents}
@@ -538,11 +265,7 @@ async def upload_endpoint(chat_id: str, file: UploadFile = File(), document_type
     """Guarda metadata y encola el PDF; el procesamiento continúa en segundo plano."""
     pdf_path: Path | None = None
     try:
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", chat_id):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="chat_id_invalido",
-            )
+        _validate_chat_id(chat_id)
         
         if file.content_type not in {"application/pdf", "application/x-pdf"}:
             raise HTTPException(

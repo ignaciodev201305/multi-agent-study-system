@@ -1,4 +1,4 @@
-"""Estados que intercambian los grafos de contextualización, sesión y documentos."""
+"""Estados de los grafos de contextualización y de sesión."""
 
 from operator import add
 from typing import Annotated, List, TypedDict
@@ -6,7 +6,7 @@ from typing import Annotated, List, TypedDict
 from langchain_core.messages.base import BaseMessage
 
 from core.reducer import add_optimized
-from core.schemas import ContextClassification, MapStudy, MultiAgentSystem
+from core.schemas import ContextClassification, MultiAgentSystem
 
 class ContextStudyState(TypedDict):
     messages: Annotated[List[BaseMessage], add]
@@ -20,17 +20,5 @@ class SessionState(TypedDict):
     multi_agent_system_context: MultiAgentSystem
     summarize_conversation: str
     documents_context: str
-    map_study: MapStudy
-    rag_context: List[str]
-    document_rag_flag: bool
-    map_study_flag: bool
-
-class DocumentState(TypedDict):
-    session_id: str
-    document_id: str
-    pdf_path: str
-    type: str
-    map_study: MapStudy
-    rag_context: Annotated[List[str], add]
-    document_rag_flag: bool
-    map_study_flag: bool
+    has_rag: bool
+    has_study_map: bool

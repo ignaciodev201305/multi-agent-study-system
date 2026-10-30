@@ -41,3 +41,11 @@ MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024
 UPLOAD_CHUNK_SIZE = 1024 * 1024        
 MAX_DOCUMENTS_PER_CHAT = 20
 MAX_PDF_BYTES_PER_CHAT = 200 * 1024 * 1024
+
+# Docling corre en un proceso aparte; un PDF que supere estos límites se marca como fallido.
+DOCLING_MAX_PAGES = max(1, int(os.environ.get("DOCLING_MAX_PAGES", "400")))
+DOCLING_TIMEOUT_SECONDS = max(10, int(os.environ.get("DOCLING_TIMEOUT_SECONDS", "900")))
+# Texto máximo que se envía en un único prompt de resumen; por encima se hace map-reduce.
+DOCUMENT_SUMMARY_CHAR_BUDGET = max(
+    10_000, int(os.environ.get("DOCUMENT_SUMMARY_CHAR_BUDGET", "120000"))
+)

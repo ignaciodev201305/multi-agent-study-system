@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { backendConnections, deleteChat } from '../services/backend';
+import { backendConnections, deleteChat, fetchChatSnapshot } from '../services/backend';
 import type {
   AppView,
   BackendEvent,
   ChatMessage,
+  ChatSnapshot,
   ConnectionStatus,
   GraphActivity,
   StudySession,
@@ -36,6 +37,50 @@ const createMessage = (role: ChatMessage['role'], content: string, agent?: strin
 const setActivityStatus = (activities: GraphActivity[], status: GraphActivity['status']): GraphActivity[] =>
   activities.map((activity) => ({ ...activity, status }));
 
+// Agrega las respuestas que el servidor checkpointeó pero no llegaron por el socket.
+const mergeSnapshot = (session: StudySession, snapshot: ChatSnapshot): StudySession => {
+  const messages = [...session.messages];
+  let changed = false;
+  const localAssistant = new Set(
+    messages.filter((message) => message.role === 'assistant').map((message) => message.content),
+  );
+
+  let previousUser: string | undefined;
+  for (const serverMessage of snapshot.messages) {
+    if (serverMessage.role === 'user') {
+      previousUser = serverMessage.content;
+      continue;
+    }
+    if (localAssistant.has(serverMessage.content)) continue;
+    // Se inserta tras el mensaje del usuario que lo originó (o al final si no se encuentra).
+    let insertAt = messages.length;
+    if (previousUser !== undefined) {
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (messages[index].role === 'user' && messages[index].content === previousUser) {
+          insertAt = index + 1;
+          break;
+        }
+      }
+    }
+    messages.splice(insertAt, 0, createMessage('assistant', serverMessage.content, 'Supervisor'));
+    localAssistant.add(serverMessage.content);
+    changed = true;
+  }
+
+  let phase = session.phase;
+  if (snapshot.phase === 'study' && phase !== 'study') {
+    messages.push(createMessage('system', 'Contexto aprobado. El equipo de tutores está listo.'));
+    phase = 'study';
+    changed = true;
+  } else if (snapshot.phase === 'clarification' && snapshot.pending_question && !localAssistant.has(snapshot.pending_question)) {
+    messages.push(createMessage('assistant', snapshot.pending_question, 'Preparación'));
+    phase = 'clarification';
+    changed = true;
+  }
+
+  return changed ? { ...session, phase, messages, updatedAt: Date.now() } : session;
+};
+
 interface PersistedState {
   sessions: StudySession[];
   activeSessionId: string;
@@ -58,6 +103,7 @@ interface StudyState extends PersistedState {
   addDocument: (sessionId: string, document: UploadedDocument) => void;
   sendMessage: (content: string) => void;
   receiveEvent: (sessionId: string, event: BackendEvent) => void;
+  resyncSession: (sessionId: string) => Promise<void>;
   setConnectionStatus: (sessionId: string, status: ConnectionStatus) => void;
   setError: (sessionId: string, message: string) => void;
   clearError: (sessionId: string) => void;
@@ -166,11 +212,13 @@ export const useStudyStore = create<StudyState>()(
 
         backendConnections.send(session.id, state.backendUrl, content, {
           onOpen: () => get().setConnectionStatus(session.id, 'connecting'),
+          onResync: () => void get().resyncSession(session.id),
           onEvent: (event) => get().receiveEvent(session.id, event),
           onError: (message) => get().setError(session.id, message),
         });
       },
       receiveEvent: (sessionId, event) => {
+        if (event.type === 'status') return;
         if (event.type === 'thinking') {
           if (!event.content) return;
           set((state) => {
@@ -260,6 +308,20 @@ export const useStudyStore = create<StudyState>()(
             graphActivities,
           };
         });
+      },
+      resyncSession: async (sessionId) => {
+        let snapshot: ChatSnapshot;
+        try {
+          snapshot = await fetchChatSnapshot(get().backendUrl, sessionId);
+        } catch {
+          // La resincronización es best-effort: el siguiente turno vuelve a intentarlo.
+          return;
+        }
+        set((state) => ({
+          sessions: state.sessions.map((session) => session.id === sessionId
+            ? mergeSnapshot(session, snapshot)
+            : session),
+        }));
       },
       setConnectionStatus: (sessionId, status) => set((state) => ({
         connectionStates: { ...state.connectionStates, [sessionId]: status },

@@ -3,10 +3,11 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
 
 from config.settings import DATA_DIRECTORY, DOCUMENT_MAX_ATTEMPTS, PDF_DIRECTORY
 from documents.document_repository import DocumentRepository
+from documents.pipeline import DocumentPipeline
+from documents.processor import DocumentIndexer
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +15,9 @@ logger = logging.getLogger(__name__)
 async def process_document_job(
     document_id: str,
     repository: DocumentRepository,
-    graph_document_processor: Any,
+    pipeline: DocumentPipeline,
 ) -> None:
-    """Reclama un PDF en cola, lo procesa en el grafo y actualiza su estado."""
+    """Reclama un PDF en cola, lo procesa y guarda su resultado en el catálogo."""
     pending_document = await repository.get_document(document_id)
     if pending_document is None:
         return
@@ -32,19 +33,16 @@ async def process_document_job(
             / PDF_DIRECTORY
             / f"{document_id}.pdf"
         )
-        graph_input = {
-            "session_id": document["chat_id"],
-            "document_id": document_id,
-            "pdf_path": pdf_path,
-            "type": document["document_type"],
-        }
-        graph_config = {"configurable": {"thread_id": document["chat_id"]}}
 
         try:
-            await graph_document_processor.ainvoke(graph_input, graph_config)
+            summary, chunks = await pipeline.process(document, pdf_path)
         except asyncio.CancelledError:
             await repository.requeue_document(document_id, DOCUMENT_MAX_ATTEMPTS)
             raise
+        except asyncio.TimeoutError:
+            logger.warning("Docling superó el tiempo máximo document_id=%s", document_id)
+            await repository.mark_failed(document_id, "El documento tardó demasiado en procesarse.")
+            return
         except Exception:
             logger.exception(
                 "Error procesando documento document_id=%s chat_id=%s",
@@ -52,20 +50,33 @@ async def process_document_job(
                 document["chat_id"],
             )
             await repository.mark_failed(document_id, "No se pudo procesar el documento.")
-        else:
-            await repository.mark_ready(document_id)
+            return
+
+        saved = await repository.mark_ready(document_id, summary, chunks)
+        if not saved and await repository.get_document(document_id) is None:
+            # La sesión se borró durante el procesamiento: se descartan los vectores escritos.
+            logger.info("Documento descartado por sesión eliminada document_id=%s", document_id)
+            if document["document_type"] == "rag":
+                await asyncio.to_thread(_delete_session_vectors, document["chat_id"])
+
+
+def _delete_session_vectors(chat_id: str) -> None:
+    try:
+        DocumentIndexer().delete_orphan_vectors(chat_id, set())
+    except Exception:
+        logger.exception("No se pudieron borrar los vectores de chat_id=%s", chat_id)
 
 
 async def document_worker(
     queue: asyncio.Queue,
     repository: DocumentRepository,
-    graph_document_processor: Any,
+    pipeline: DocumentPipeline,
 ) -> None:
     """Consume trabajos de la cola continuamente y marca cada tarea como atendida."""
     while True:
         document_id = await queue.get()
         try:
-            await process_document_job(document_id, repository, graph_document_processor)
+            await process_document_job(document_id, repository, pipeline)
         except asyncio.CancelledError:
             raise
         except Exception:

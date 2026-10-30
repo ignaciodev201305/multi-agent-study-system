@@ -1,16 +1,12 @@
-"""Carga e indexación de PDFs en Chroma para RAG y mapas de estudio."""
+"""Indexación de PDFs en Chroma para RAG."""
 
 import hashlib
 import logging
 import os
 
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_docling.loader import DoclingLoader
 from langchain_openai import OpenAIEmbeddings
 
 from config.settings import OPENAI_API_BASE, COLLECTION_NAME, PDF_DIRECTORY, CHROMA_DIRECTORY, DATA_DIRECTORY
@@ -19,25 +15,6 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-
-class DocumentProcessor:
-    """Extrae el contenido de un PDF usando Docling."""
-    def load_document(self, file_path):
-        """Carga el PDF y devuelve sus documentos con el texto extraído."""
-        options = PdfPipelineOptions()
-        options.do_table_structure = False
-        
-        converter = DocumentConverter(
-            format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_options = options
-                )
-            }
-        )
-
-
-        loader = DoclingLoader(file_path=file_path, converter=converter)
-        return loader.load()
 
 class DocumentIndexer:
     """Gestiona el vector store de una sesión y la indexación de sus PDFs."""
@@ -74,7 +51,9 @@ class DocumentIndexer:
                 "session_id": self.session_id,
                 "document_id": source,
                 "source": f"{self.path_pdf}/{source}.pdf",
-                "chunk_index": i
+                "chunk_index": i,
+                # Chroma solo admite metadata escalar: páginas como "3,4".
+                "pages": ",".join(str(page) for page in document.metadata.get("pages", [])),
             }
             # El id se deriva del contenido para evitar duplicados del mismo fragmento.
             content_id = f"{self.session_id}\0{self.path_pdf+"/"+source}\0{i}\0{texto}"

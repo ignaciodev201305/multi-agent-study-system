@@ -1,6 +1,7 @@
 import type {
   BackendDocument,
   BackendEvent,
+  ChatSnapshot,
   DocumentProcessingStatus,
   DocumentType,
   ThinkingMetadata,
@@ -27,11 +28,15 @@ interface ChatPdfsResponse {
 
 export type BackendCallbacks = {
   onOpen: () => void;
+  // El servidor puede haber terminado un turno sin poder enviarlo: hay que resincronizar.
+  onResync: () => void;
   onEvent: (event: BackendEvent) => void;
   onError: (message: string) => void;
 };
 
 const INACTIVITY_TIMEOUT_MS = 120_000;
+// Código con que el servidor cierra una conexión reemplazada por otra más nueva.
+const WS_CLOSE_SUPERSEDED = 4000;
 
 const websocketUrl = (baseUrl: string, sessionId: string): string => {
   let url: URL;
@@ -137,6 +142,26 @@ export const listChatPdfs = async (
   return documents;
 };
 
+export const fetchChatSnapshot = async (
+  baseUrl: string,
+  sessionId: string,
+): Promise<ChatSnapshot> => {
+  let response: Response;
+  try {
+    response = await fetch(
+      httpUrl(baseUrl, `/chats/${encodeURIComponent(sessionId)}/messages`),
+      { cache: 'no-store' },
+    );
+  } catch {
+    throw new Error('No se pudo consultar el historial de la sesión.');
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok || typeof payload !== 'object' || payload === null || !('messages' in payload)) {
+    throw new Error('No se pudo consultar el historial de la sesión.');
+  }
+  return payload as ChatSnapshot;
+};
+
 export const deleteChat = async (baseUrl: string, sessionId: string): Promise<void> => {
   const target = chatUrl(baseUrl, sessionId);
 
@@ -220,6 +245,7 @@ const parseBackendEvent = (value: unknown): BackendEvent | null => {
     return { type: 'error', code: 'context_failed', content, retryable: true };
   }
   if (eventType === 'agent_response') return { type: 'agent_response', content };
+  if (eventType === 'status') return { type: 'status', content };
 
   return null;
 };
@@ -267,7 +293,9 @@ export class BackendConnection {
   }
 
   private readonly handleOpen = (): void => {
-    if (!this.hasFailed) this.callbacks.onOpen();
+    if (this.hasFailed) return;
+    this.callbacks.onOpen();
+    this.callbacks.onResync();
   };
 
   private readonly handleMessage = (message: MessageEvent<string>): void => {
@@ -286,13 +314,20 @@ export class BackendConnection {
 
     if (event.type === 'error') {
       this.callbacks.onEvent(event);
-      if (event.code === 'invalid_message') {
+      if (event.code === 'invalid_message' || event.code === 'turn_in_progress') {
         this.restartTimeout();
       } else {
         this.hasFailed = true;
         this.clearTimeout();
         if (this.socket.readyState === WebSocket.OPEN) this.socket.close();
       }
+      return;
+    }
+
+    if (event.type === 'status') {
+      // Heartbeat o espera del turno anterior: el turno sigue vivo.
+      this.restartTimeout();
+      if (event.content === 'previous_turn_finished') this.callbacks.onResync();
       return;
     }
 
@@ -309,7 +344,13 @@ export class BackendConnection {
     this.fail('No se pudo conectar con el backend. Comprueba que el servicio esté iniciado.');
   };
 
-  private readonly handleClose = (): void => {
+  private readonly handleClose = (event: CloseEvent): void => {
+    if (event.code === WS_CLOSE_SUPERSEDED) {
+      // Otra conexión de esta sesión tomó el relevo; no es un error.
+      this.hasFailed = true;
+      this.clearTimeout();
+      return;
+    }
     if (!this.hasFailed) this.fail('La conexión con el backend se cerró.');
   };
 

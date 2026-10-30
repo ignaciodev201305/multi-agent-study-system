@@ -1,6 +1,7 @@
 """Catálogo SQLite y persistencia de estados para documentos subidos."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +47,7 @@ class DocumentRepository:
                     status IN ('queued', 'processing', 'ready', 'failed')
                 ),
                 chunks INTEGER NOT NULL DEFAULT 0,
+                summary_json TEXT,
                 attempts INTEGER NOT NULL DEFAULT 0,
                 error TEXT,
                 created_at TEXT NOT NULL,
@@ -57,6 +59,7 @@ class DocumentRepository:
                 ON documents (status);
             """
         )
+        await cls._add_missing_columns(connection)
         await cls._deduplicate_existing_rows(connection)
         await connection.execute(
             """
@@ -66,6 +69,14 @@ class DocumentRepository:
         )
         await connection.commit()
         return cls(connection)
+
+    @staticmethod
+    async def _add_missing_columns(connection: aiosqlite.Connection) -> None:
+        """Migra catálogos creados antes de guardar el resumen por documento."""
+        cursor = await connection.execute("PRAGMA table_info(documents)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "summary_json" not in columns:
+            await connection.execute("ALTER TABLE documents ADD COLUMN summary_json TEXT")
 
     @staticmethod
     async def _deduplicate_existing_rows(connection: aiosqlite.Connection) -> None:
@@ -297,18 +308,38 @@ class DocumentRepository:
                 await self._connection.rollback()
                 raise
 
-    async def mark_ready(self, document_id: str) -> None:
-        """Marca el documento como listo y limpia cualquier error anterior."""
+    async def mark_ready(self, document_id: str, summary: dict, chunks: int) -> bool:
+        """Guarda el resultado y marca listo; False si la sesión se borró mientras se procesaba."""
         async with self._lock:
-            await self._connection.execute(
+            cursor = await self._connection.execute(
                 """
                 UPDATE documents
-                SET status = 'ready', error = NULL, updated_at = ?
-                WHERE document_id = ?
+                SET status = 'ready', error = NULL, summary_json = ?, chunks = ?,
+                    updated_at = ?
+                WHERE document_id = ? AND status = 'processing'
                 """,
-                (_utc_timestamp(), document_id),
+                (json.dumps(summary, ensure_ascii=False), chunks, _utc_timestamp(), document_id),
             )
             await self._connection.commit()
+            return cursor.rowcount > 0
+
+    async def list_ready_with_summaries(self, chat_id: str) -> list[dict]:
+        """Documentos listos de una sesión con su resumen, en orden de subida."""
+        async with self._lock:
+            cursor = await self._connection.execute(
+                """
+                SELECT document_id, original_filename, document_type, chunks, summary_json
+                FROM documents
+                WHERE chat_id = ? AND status = 'ready'
+                ORDER BY created_at ASC
+                """,
+                (chat_id,),
+            )
+            rows = [dict(row) for row in await cursor.fetchall()]
+        for row in rows:
+            raw = row.pop("summary_json")
+            row["summary"] = json.loads(raw) if raw else None
+        return rows
 
     async def mark_failed(self, document_id: str, error: str) -> None:
         """Marca el documento como fallido y guarda el motivo para mostrarlo después."""
