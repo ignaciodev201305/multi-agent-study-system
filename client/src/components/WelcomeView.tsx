@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import type { StudyPhase, StudySession, Theme } from '../types';
+import { useEffect, useState } from 'react';
+import { fetchDueReviews } from '../services/backend';
+import type { DueReview, StudyPhase, StudySession, Theme } from '../types';
 import styles from '../App.module.css';
 
 interface WelcomeViewProps {
@@ -20,6 +21,9 @@ const phaseText: Record<StudyPhase, string> = {
   clarification: 'Aclaraciones',
   study: 'En estudio',
 };
+
+// Evita una consulta por tecla al escribir la dirección o el token.
+const DUE_REVIEWS_DELAY_MS = 400;
 
 const formatDate = (timestamp: number): string => {
   const date = new Date(timestamp);
@@ -45,6 +49,27 @@ export function WelcomeView({
   const orderedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [dueReviews, setDueReviews] = useState<DueReview[]>([]);
+  const sessionTitles = new Map(sessions.map((session) => [session.id, session.title]));
+  const localDueReviews = dueReviews.filter((review) => sessionTitles.has(review.chat_id));
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetchDueReviews(backendUrl)
+        .then((reviews) => {
+          if (!cancelled) setDueReviews(reviews);
+        })
+        .catch(() => {
+          // Sin backend, la sección simplemente no aparece.
+          if (!cancelled) setDueReviews([]);
+        });
+    }, DUE_REVIEWS_DELAY_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authToken, backendUrl]);
 
   const handleDelete = async (session: StudySession): Promise<void> => {
     const confirmed = window.confirm(`¿Borrar la sesión «${session.title}»? Esta acción no se puede deshacer.`);
@@ -112,6 +137,25 @@ export function WelcomeView({
         </section>
 
         <section className={styles.recentPanel} aria-label="Sesiones recientes">
+          {localDueReviews.length > 0 && (
+            <div className={styles.dueSection}>
+              <div className={styles.recentHeader}>
+                <h2>Para repasar hoy</h2>
+                <span className={styles.recentCount}>{localDueReviews.length}</span>
+              </div>
+              <ul className={styles.recentList}>
+                {localDueReviews.map((review) => (
+                  <li className={styles.recentRow} key={`${review.chat_id}-${review.topic_number}`}>
+                    <button className={styles.recentButton} onClick={() => onOpenSession(review.chat_id)} type="button">
+                      <span className={styles.recentTitle}>{review.topic}</span>
+                      <span className={styles.recentMeta}>{sessionTitles.get(review.chat_id)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className={styles.recentHeader}>
             <h2>Recientes</h2>
             <span className={styles.recentCount}>{sessions.length}</span>
