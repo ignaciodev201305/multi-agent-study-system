@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
@@ -9,7 +10,8 @@ interface MarkdownMessageProps {
   content: string;
 }
 
-export function MarkdownMessage({ content }: MarkdownMessageProps): JSX.Element {
+// Procesar Markdown y KaTeX es caro: solo se repite si cambia el texto.
+export const MarkdownMessage = memo(function MarkdownMessage({ content }: MarkdownMessageProps): JSX.Element {
   return (
     <div className={styles.markdownContent}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
@@ -17,4 +19,4 @@ export function MarkdownMessage({ content }: MarkdownMessageProps): JSX.Element 
       </ReactMarkdown>
     </div>
   );
-}
+});

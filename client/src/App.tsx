@@ -3,9 +3,10 @@ import { SessionView } from './components/SessionView';
 import { WelcomeView } from './components/WelcomeView';
 import { useStudyStore } from './store/useStudyStore';
 import styles from './App.module.css';
-import type { GraphActivity } from './types';
+import type { Board, GraphActivity } from './types';
 
 const EMPTY_GRAPH_ACTIVITIES: GraphActivity[] = [];
+const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
 
 export default function App(): JSX.Element {
   const sessions = useStudyStore((state) => state.sessions);
@@ -18,6 +19,11 @@ export default function App(): JSX.Element {
   const connectionStates = useStudyStore((state) => state.connectionStates);
   const errors = useStudyStore((state) => state.errors);
   const graphActivities = useStudyStore((state) => state.graphActivities[state.activeSessionId] ?? EMPTY_GRAPH_ACTIVITIES);
+  const board = useStudyStore((state) => state.boards[state.activeSessionId] ?? EMPTY_BOARD);
+  const sidePanelOpen = useStudyStore((state) => state.sidePanelOpen);
+  const sidePanelTab = useStudyStore((state) => state.sidePanelTab);
+  const setSidePanelOpen = useStudyStore((state) => state.setSidePanelOpen);
+  const setSidePanelTab = useStudyStore((state) => state.setSidePanelTab);
   const createSession = useStudyStore((state) => state.createSession);
   const deleteSession = useStudyStore((state) => state.deleteSession);
   const selectSession = useStudyStore((state) => state.selectSession);
@@ -61,15 +67,20 @@ export default function App(): JSX.Element {
       {isSessionView && activeSession ? (
         <SessionView
           backendUrl={backendUrl}
+          board={board}
           error={errors[activeSession.id]}
           graphActivities={graphActivities}
           isBusy={(connectionStates[activeSession.id] ?? 'idle') === 'connecting'}
           onBack={goHome}
           onDismissError={() => clearError(activeSession.id)}
           onSend={sendMessage}
+          onSidePanelOpenChange={setSidePanelOpen}
+          onSidePanelTabChange={setSidePanelTab}
           onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           onUploaded={(document) => addDocument(activeSession.id, document)}
           session={activeSession}
+          sidePanelOpen={sidePanelOpen}
+          sidePanelTab={sidePanelTab}
           status={connectionStates[activeSession.id] ?? 'idle'}
           theme={theme}
         />

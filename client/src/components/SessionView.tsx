@@ -1,9 +1,12 @@
 import { Composer } from './Composer';
 import { Conversation } from './Conversation';
 import { DocsPanel } from './DocsPanel';
+import { StudySidePanel } from './StudySidePanel';
 import type {
+  Board,
   ConnectionStatus,
   GraphActivity,
+  SidePanelTab,
   StudyPhase,
   StudySession,
   Theme,
@@ -19,11 +22,16 @@ interface SessionViewProps {
   error?: string;
   graphActivities: GraphActivity[];
   theme: Theme;
+  board: Board;
+  sidePanelOpen: boolean;
+  sidePanelTab: SidePanelTab;
   onToggleTheme: () => void;
   onBack: () => void;
   onSend: (content: string) => void;
   onDismissError: () => void;
   onUploaded: (document: UploadedDocument) => void;
+  onSidePanelOpenChange: (open: boolean) => void;
+  onSidePanelTabChange: (tab: SidePanelTab) => void;
 }
 
 const phaseText: Record<StudyPhase, string> = {
@@ -40,11 +48,16 @@ export function SessionView({
   error,
   graphActivities,
   theme,
+  board,
+  sidePanelOpen,
+  sidePanelTab,
   onToggleTheme,
   onBack,
   onSend,
   onDismissError,
   onUploaded,
+  onSidePanelOpenChange,
+  onSidePanelTabChange,
 }: SessionViewProps): JSX.Element {
   return (
     <div className={styles.appShell}>
@@ -68,9 +81,19 @@ export function SessionView({
               <span className={styles.phaseLabel} data-status={status}>{phaseText[session.phase]}</span>
             </div>
           </div>
-          <button className={styles.themeButton} onClick={onToggleTheme} type="button">
-            {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
-          </button>
+          <div className={styles.topbarActions}>
+            <button
+              aria-expanded={sidePanelOpen}
+              className={styles.themeButton}
+              onClick={() => onSidePanelOpenChange(!sidePanelOpen)}
+              type="button"
+            >
+              Pizarra{board.blocks.length > 0 ? ` (${board.blocks.length})` : ''}
+            </button>
+            <button className={styles.themeButton} onClick={onToggleTheme} type="button">
+              {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+            </button>
+          </div>
         </header>
         <Conversation
           error={error}
@@ -83,6 +106,19 @@ export function SessionView({
         />
         <Composer isBusy={isBusy} onSend={onSend} phase={session.phase} />
       </section>
+      {sidePanelOpen && (
+        <StudySidePanel
+          backendUrl={backendUrl}
+          board={board}
+          isBusy={isBusy}
+          key={session.id}
+          onClose={() => onSidePanelOpenChange(false)}
+          onTabChange={onSidePanelTabChange}
+          sessionId={session.id}
+          tab={sidePanelTab}
+          title={session.title}
+        />
+      )}
     </div>
   );
 }
