@@ -19,7 +19,7 @@ def _model_role(role: str, model: str, temperature: float, reasoning_effort: str
     }
 
 
-# Registro de modelos por rol: cada parte del sistema pide un rol, no un nombre de modelo.
+# Modelo, temperatura y esfuerzo de razonamiento de cada rol.
 MODEL_ROLES = {
     "context_classifier": _model_role("context_classifier", "google/gemini-3.1-flash-lite", 0.0, "medium"),
     "factory": _model_role("factory", "google/gemini-3.1-flash-lite", 0.0, "medium"),
@@ -32,7 +32,7 @@ EMBEDDINGS_MODEL = os.environ.get("MODEL_EMBEDDINGS", "qwen/qwen3-embedding-8b")
 
 OPENAI_API_BASE="https://openrouter.ai/api/v1"
 
-# Historial de sesión: al superar el máximo se resumen los antiguos y se conservan los últimos.
+# Mensajes máximos del historial y cuántos se conservan al resumir.
 SESSION_HISTORY_MAX_MESSAGES = 10
 SESSION_HISTORY_KEEP_MESSAGES = 4
 
@@ -57,21 +57,21 @@ UPLOAD_CHUNK_SIZE = 1024 * 1024
 MAX_DOCUMENTS_PER_CHAT = 20
 MAX_PDF_BYTES_PER_CHAT = 200 * 1024 * 1024
 
-# Docling corre en un proceso aparte; un PDF que supere estos límites se marca como fallido.
+# Límites de procesamiento de cada PDF en Docling.
 DOCLING_MAX_PAGES = max(1, int(os.environ.get("DOCLING_MAX_PAGES", "400")))
 DOCLING_TIMEOUT_SECONDS = max(10, int(os.environ.get("DOCLING_TIMEOUT_SECONDS", "900")))
-# Texto máximo que se envía en un único prompt de resumen; por encima se hace map-reduce.
+# Caracteres máximos por prompt de resumen antes de usar map-reduce.
 DOCUMENT_SUMMARY_CHAR_BUDGET = max(
     10_000, int(os.environ.get("DOCUMENT_SUMMARY_CHAR_BUDGET", "120000"))
 )
 
-# Token local compartido con el cliente (header Authorization en HTTP y subprotocolo en WS).
+# Token local que comparten el backend y el cliente.
 APP_TOKEN = os.environ.get("APP_TOKEN", "").strip()
-# Límites del WebSocket para acotar costo: largo de mensaje y turnos por minuto por sesión.
+# Límites del WebSocket para acotar el costo.
 WS_MAX_MESSAGE_CHARS = max(1, int(os.environ.get("WS_MAX_MESSAGE_CHARS", "8000")))
 WS_MAX_TURNS_PER_MINUTE = max(1, int(os.environ.get("WS_MAX_TURNS_PER_MINUTE", "20")))
 
-# Tool math (SymPy): tiempo máximo del subproceso por cálculo.
+# Tiempo máximo de cada cálculo de la tool math.
 MATH_TIMEOUT_SECONDS = max(1, int(os.environ.get("MATH_TIMEOUT_SECONDS", "8")))
-# Pasos máximos del supervisor por turno (llamadas a modelo y tools).
+# Pasos máximos del supervisor por turno.
 SUPERVISOR_RECURSION_LIMIT = max(5, int(os.environ.get("SUPERVISOR_RECURSION_LIMIT", "40")))

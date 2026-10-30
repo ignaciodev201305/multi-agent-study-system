@@ -13,17 +13,18 @@ from config.settings import MAX_PDF_SIZE_BYTES, WS_MAX_TURNS_PER_MINUTE
 
 THREAD_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,100}")
 
-# El navegador no permite cabeceras en el WebSocket: el token viaja como subprotocolo
-# "token.<APP_TOKEN>" junto al subprotocolo de la app, que es el que se acepta.
+# El token viaja como subprotocolo porque el navegador no permite cabeceras en el WebSocket.
 WS_APP_SUBPROTOCOL = "study.v1"
 WS_TOKEN_SUBPROTOCOL_PREFIX = "token."
 
 
 def is_valid_thread_id(thread_id: str) -> bool:
+    """Indica si el id cumple el formato permitido."""
     return THREAD_ID_PATTERN.fullmatch(thread_id) is not None
 
 
 def validate_chat_id(chat_id: str) -> None:
+    """Rechaza con 400 un id de chat con formato inválido."""
     if not is_valid_thread_id(chat_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -32,13 +33,15 @@ def validate_chat_id(chat_id: str) -> None:
 
 
 def token_matches(candidate: str | None) -> bool:
-    # Sin token configurado no se acepta nada: la app no arranca en ese caso (ver lifespan).
+    """Compara el token recibido con APP_TOKEN en tiempo constante."""
+    # Sin token configurado se rechaza toda conexión.
     if not settings.APP_TOKEN or candidate is None:
         return False
     return secrets.compare_digest(candidate.encode(), settings.APP_TOKEN.encode())
 
 
 def websocket_token(subprotocols: list[str]) -> str | None:
+    """Extrae el token de los subprotocolos del WebSocket."""
     for protocol in subprotocols:
         if protocol.startswith(WS_TOKEN_SUBPROTOCOL_PREFIX):
             return protocol[len(WS_TOKEN_SUBPROTOCOL_PREFIX):]
@@ -80,6 +83,7 @@ class TurnRateLimiter:
         self._turns: dict[str, deque] = {}
 
     def allow(self, thread_id: str) -> bool:
+        """Registra el turno si la sesión no superó el límite de la ventana."""
         now = time.monotonic()
         turns = self._turns.setdefault(thread_id, deque())
         while turns and now - turns[0] > self.window_seconds:
@@ -90,6 +94,7 @@ class TurnRateLimiter:
         return True
 
     def forget(self, thread_id: str) -> None:
+        """Olvida los turnos registrados de una sesión."""
         self._turns.pop(thread_id, None)
 
 

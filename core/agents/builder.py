@@ -47,6 +47,7 @@ class SupervisorBuilder:
         self.study_plan = study_plan
 
     def build(self):
+        """Crea el supervisor con sus especialistas y tools."""
         specialists = [
             _subagent_tool(ARCHETYPES[selected.archetype], selected.focus)
             for selected in self.study_plan.archetypes
@@ -60,6 +61,7 @@ class SupervisorBuilder:
         )
 
     def system_prompt(self) -> str:
+        """Arma el prompt del supervisor con el plan de la sesión."""
         plan = self.study_plan
         syllabus = "\n".join(f"{index}. {item}" for index, item in enumerate(plan.syllabus, start=1))
         specialists = "\n".join(

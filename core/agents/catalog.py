@@ -1,9 +1,4 @@
-"""Catálogo de arquetipos de subagente por función y técnicas pedagógicas reutilizables.
-
-El factory no escribe prompts: elige arquetipos de aquí y redacta solo un `focus` corto
-para cada uno. Cada arquetipo fija su prompt base, sus tools, su tier de modelo y su
-temperatura; las técnicas son bloques de texto que el arquetipo incluye.
-"""
+"""Catálogo de arquetipos de subagente por función y técnicas pedagógicas reutilizables."""
 
 from dataclasses import dataclass
 from typing import get_args
@@ -44,11 +39,14 @@ TECHNIQUES = {
 
 @dataclass(frozen=True)
 class Archetype:
+    """Especialista del catálogo con su prompt, tools, modelo y técnicas."""
     name: str
-    description: str  # Lo lee el factory para elegir y el supervisor como descripción de la tool.
+    # La leen el factory y el supervisor.
+    description: str
     prompt: str
     tools: tuple[str, ...]
-    tier: str  # "light" o "heavy": rol subagent_light / subagent_heavy de MODEL_ROLES.
+    # Valores "light" o "heavy".
+    tier: str
     temperature: float
     techniques: tuple[str, ...]
 

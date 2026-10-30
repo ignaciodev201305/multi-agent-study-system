@@ -2,8 +2,7 @@ import { app, BrowserWindow, net, protocol } from 'electron';
 import { join, normalize, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// El renderer empaquetado se sirve como app://bundle en vez de file://: así su Origin no
-// es "null" (que cualquier web puede falsificar) y el backend puede permitirlo explícitamente.
+// Se sirve como app://bundle porque el backend no acepta el Origin "null" de file://.
 const APP_SCHEME = 'app';
 const APP_ORIGIN = `${APP_SCHEME}://bundle`;
 const distDirectory = join(__dirname, '../dist');

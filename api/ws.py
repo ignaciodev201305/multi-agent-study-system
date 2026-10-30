@@ -25,8 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 WS_IDLE_TIMEOUT_SECONDS = 300
-# Un turno largo (tools, handoffs, PDFs recién procesados) puede tardar; se espera
-# a que termine el anterior en vez de rechazar la conexión nueva.
+# Tiempo máximo de espera a que termine el turno anterior.
 TURN_WAIT_TIMEOUT_SECONDS = 120
 HEARTBEAT_INTERVAL_SECONDS = 15
 WS_CLOSE_SUPERSEDED = 4000
@@ -63,9 +62,11 @@ class SessionRegistry:
                 self._sockets.pop(thread_id, None)
 
     def active_socket(self, thread_id: str) -> WebSocket | None:
+        """Devuelve la conexión activa de una sesión."""
         return self._sockets.get(thread_id)
 
     async def _get_lock(self, thread_id: str) -> asyncio.Lock:
+        """Obtiene el lock por sesión y registra quién lo usa."""
         async with self._guard:
             entry = self._locks.get(thread_id)
             if entry is None:
@@ -75,6 +76,7 @@ class SessionRegistry:
             return entry["lock"]
 
     async def _release_lock(self, thread_id: str, lock: asyncio.Lock, *, acquired: bool) -> None:
+        """Libera el lock y elimina su entrada cuando ya no hay conexiones asociadas."""
         if acquired:
             lock.release()
         async with self._guard:
@@ -101,7 +103,7 @@ class SessionRegistry:
             acquired = True
             logger.info("turn lock acquired thread_id=%s waited=%s", thread_id, waited)
             if waited:
-                # La respuesta del turno anterior quedó en el checkpoint: el cliente resincroniza.
+                # Avisa al cliente para recuperar la respuesta del turno anterior.
                 await sender.send_json({"type": "status", "content": "previous_turn_finished"})
             yield
         finally:
@@ -118,6 +120,7 @@ class SafeSender:
         self.closed = False
 
     async def send_json(self, payload: dict) -> None:
+        """Envía el evento y marca la conexión como cerrada si falla."""
         if self.closed:
             return
         try:
@@ -193,6 +196,7 @@ async def _heartbeat(sender: SafeSender) -> None:
 
 
 async def _run_graph(graph, sender: SafeSender, graph_input, config):
+    """Ejecuta el grafo manteniendo el heartbeat mientras dura el turno."""
     heartbeat = asyncio.create_task(_heartbeat(sender))
     try:
         return await execute_astream_graph(graph, sender, graph_input, config)
@@ -208,7 +212,7 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
 
     snapshot = await graph.aget_state(config)
     had_plan = snapshot.values.get("study_plan") is not None
-    # Documentos listos al empezar el turno; los que terminen a mitad de turno entran en el siguiente.
+    # Usa los documentos listos al empezar el turno.
     graph_input = Command(resume=message) if snapshot.interrupts else {
         "messages": [HumanMessage(content=message)],
         "documents": await state.document_repository.list_ready_with_summaries(thread_id),
@@ -271,6 +275,7 @@ async def _run_websocket_session(websocket: WebSocket, sender: SafeSender, threa
 
 
 def origin_allowed(origin: str | None) -> bool:
+    """Indica si el Origin pertenece a los orígenes permitidos."""
     return origin in ALLOWED_ORIGINS or (
         origin is not None and re.fullmatch(ALLOWED_ORIGIN_REGEX, origin) is not None
     )

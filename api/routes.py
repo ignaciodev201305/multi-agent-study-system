@@ -62,8 +62,7 @@ async def delete_chat_endpoint(chat_id: str, request: Request):
     """Elimina los checkpoints y los archivos de una sesión."""
     validate_chat_id(chat_id)
 
-    # No espera al worker: borrar las filas cancela el documento en curso, que
-    # descarta su resultado al no poder guardarlo (ver document_worker).
+    # Borrar las filas cancela el documento en curso sin esperar al worker.
     try:
         await request.app.state.document_repository.delete_chat(chat_id)
         await request.app.state.study_graph.checkpointer.adelete_thread(chat_id)

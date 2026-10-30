@@ -1,9 +1,4 @@
-"""Proceso aislado de SymPy: lee una operación JSON por stdin y escribe el resultado por stdout.
-
-Se ejecuta con `python -I` desde core/tools/math.py, con timeout. `parse_expr` usa `eval`,
-así que además de aislarlo en un subproceso la expresión pasa por una lista blanca de
-caracteres y nombres antes de parsearse.
-"""
+"""Proceso aislado de SymPy que lee una operación JSON por stdin y escribe el resultado por stdout."""
 
 import json
 import re
@@ -17,7 +12,7 @@ ALLOWED_FUNCTIONS = {
     "exp", "log", "ln", "sqrt", "Abs", "factorial", "binomial", "floor", "ceiling",
 }
 CONSTANTS = {"pi": "pi", "E": "E", "e": "E", "I": "I", "oo": "oo"}
-# Una letra antes de "(" multiplica: x(x+1). f, g y h serían funciones sin definir.
+# Estos nombres serían funciones sin definir; otra letra antes de "(" multiplica.
 UNDEFINED_FUNCTIONS = {"f", "g", "h"}
 UNICODE_REPLACEMENTS = {
     "²": "^2", "³": "^3", "·": "*", "×": "*", "÷": "/", "−": "-", "π": "pi", "∞": "oo",
@@ -26,15 +21,18 @@ UNICODE_REPLACEMENTS = {
 
 
 def _limit_resources() -> None:
+    """Limita la memoria del proceso cuando el sistema lo permite."""
     try:
         import resource
-    except ImportError:  # Windows: solo queda el timeout del proceso padre.
+    except ImportError:
+        # Windows no tiene resource; queda el timeout del proceso padre.
         return
     memory = 512 * 1024 * 1024
     resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
 
 
 def _check(expression: str) -> str:
+    """Valida la expresión contra la lista blanca y la normaliza."""
     expression = str(expression).strip()
     for symbol, replacement in UNICODE_REPLACEMENTS.items():
         expression = expression.replace(symbol, replacement)
@@ -57,6 +55,7 @@ def _check(expression: str) -> str:
 
 
 def _parse(expression: str):
+    """Convierte una expresión validada en un objeto de SymPy."""
     import sympy
     from sympy.parsing.sympy_parser import (
         convert_xor,
@@ -74,7 +73,7 @@ def _parse(expression: str):
         name: getattr(sympy, name)
         for name in ("Integer", "Float", "Rational", "Symbol", "Function")
     }
-    # Sin split_symbols: "velocity" es una variable, no v*e*l*o*c*i*t*y.
+    # Sin split_symbols para no separar nombres como velocity.
     transformations = standard_transformations + (
         convert_xor,
         implicit_multiplication,
@@ -90,6 +89,7 @@ def _parse(expression: str):
 
 
 def _equation(text: str):
+    """Convierte un texto con '=' en una ecuación de SymPy."""
     import sympy
 
     if text.count("=") > 1:
@@ -101,6 +101,7 @@ def _equation(text: str):
 
 
 def run(request: dict) -> dict:
+    """Ejecuta la operación pedida y devuelve su resultado."""
     import sympy
 
     operation = request["operation"]
@@ -147,6 +148,7 @@ def run(request: dict) -> dict:
 
 
 def _single_symbol(expression):
+    """Devuelve la única variable de la expresión."""
     symbols = sorted(expression.free_symbols, key=str)
     if len(symbols) != 1:
         raise ValueError("Indica la variable: la expresión tiene varias o ninguna.")
@@ -159,7 +161,8 @@ if __name__ == "__main__":
         response = run(json.loads(sys.stdin.buffer.read().decode("utf-8")))
     except ModuleNotFoundError as error:
         response = {"error": f"{error}. Inicia el backend con el Python de .venv o instala requirements.txt."}
-    except Exception as error:  # El error vuelve al agente como texto, no como excepción.
+    except Exception as error:
+        # El error vuelve al agente como texto.
         response = {"error": f"{type(error).__name__}: {error}"}
-    # Bytes UTF-8 explícitos: la codificación por defecto de stdout depende del sistema.
+    # Escribe bytes UTF-8 porque la codificación de stdout depende del sistema.
     sys.stdout.buffer.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))

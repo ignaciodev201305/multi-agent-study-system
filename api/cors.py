@@ -4,8 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Orígenes locales usados por el front (Vite, Docker y Electron empaquetado).
-# "null" no se acepta: cualquier web puede generarlo con un <iframe sandbox>. Electron
-# empaquetado sirve el renderer con el esquema propio app://bundle.
+# Electron empaquetado se sirve como app://bundle; "null" no se acepta por seguridad.
 ALLOWED_ORIGINS = (
     "http://127.0.0.1:5173",
     "http://localhost:5173",

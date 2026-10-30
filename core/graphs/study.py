@@ -14,6 +14,7 @@ from core.states import StudyState
 
 
 async def open_checkpointer(database_path=STUDY_DATABASE_PATH) -> AsyncSqliteSaver:
+    """Abre el checkpointer SQLite con los modelos permitidos por el serde."""
     serde = JsonPlusSerializer(allowed_msgpack_modules=[
         ("core.schemas", "ContextClassification"),
         ("core.schemas", "StudyPlan"),
@@ -43,8 +44,7 @@ class StudyGraph:
 
         graph.add_node("context", self.context.build_subgraph())
         graph.add_node("reset_history", reset_history)
-        # El turno va en el padre, no como subgrafo: un subgrafo devuelve su lista final de
-        # mensajes y los RemoveMessage del resumidor no llegarían al estado del padre.
+        # El turno va en el padre para que el resumidor pueda quitar mensajes del estado.
         self.session.add_nodes(graph)
 
         graph.add_conditional_edges(START, route_turn, ["context", "summarize_conversation"])

@@ -43,6 +43,7 @@ class StudyPlan(BaseModel):
     @field_validator("archetypes")
     @classmethod
     def _unique_archetypes(cls, archetypes):
+        """Rechaza arquetipos repetidos en el plan."""
         names = [selected.archetype for selected in archetypes]
         if len(names) != len(set(names)):
             raise ValueError("Cada arquetipo puede elegirse una sola vez.")

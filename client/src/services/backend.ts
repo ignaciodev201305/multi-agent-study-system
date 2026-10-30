@@ -28,15 +28,14 @@ interface ChatPdfsResponse {
 
 export type BackendCallbacks = {
   onOpen: () => void;
-  // El servidor puede haber terminado un turno sin poder enviarlo: hay que resincronizar.
+  // Se llama cuando hay que recuperar respuestas del servidor.
   onResync: () => void;
   onEvent: (event: BackendEvent) => void;
   onError: (message: string) => void;
 };
 
 const INACTIVITY_TIMEOUT_MS = 120_000;
-// Subprotocolo de la app; el token viaja como un segundo subprotocolo "token.<APP_TOKEN>"
-// porque el navegador no permite cabeceras en el WebSocket.
+// El token viaja como subprotocolo porque el navegador no permite cabeceras en el WebSocket.
 const WS_APP_SUBPROTOCOL = 'study.v1';
 
 let authToken = '';
@@ -344,7 +343,7 @@ export class BackendConnection {
     }
 
     if (event.type === 'status') {
-      // Heartbeat o espera del turno anterior: el turno sigue vivo.
+      // El turno sigue vivo aunque no emita tokens.
       this.restartTimeout();
       if (event.content === 'previous_turn_finished') this.callbacks.onResync();
       return;
@@ -369,7 +368,7 @@ export class BackendConnection {
       return;
     }
     if (event.code === WS_CLOSE_SUPERSEDED) {
-      // Otra conexión de esta sesión tomó el relevo; no es un error.
+      // Otra conexión de esta sesión la reemplazó; no es un error.
       this.hasFailed = true;
       this.clearTimeout();
       return;

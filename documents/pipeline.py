@@ -27,11 +27,12 @@ from core.schemas import MapStudy, RagContext
 
 logger = logging.getLogger(__name__)
 
-# El converter carga modelos pesados: se crea una sola vez por proceso hijo.
+# Se crea una vez por proceso hijo porque carga modelos pesados.
 _converter = None
 
 
 def _get_converter():
+    """Devuelve el converter de Docling de este proceso."""
     global _converter
     if _converter is None:
         from docling.datamodel.base_models import InputFormat
@@ -79,24 +80,28 @@ class DoclingExecutor:
         self._pool = self._new_pool()
 
     def _new_pool(self) -> ProcessPoolExecutor:
+        """Crea el pool de un proceso para Docling."""
         return ProcessPoolExecutor(max_workers=1, mp_context=self._context)
 
     async def extract(self, pdf_path: Path) -> list[dict]:
+        """Extrae los fragmentos del PDF con timeout."""
         loop = asyncio.get_running_loop()
         future = loop.run_in_executor(self._pool, extract_chunks, str(pdf_path), DOCLING_MAX_PAGES)
         try:
             return await asyncio.wait_for(future, timeout=DOCLING_TIMEOUT_SECONDS)
         except (asyncio.TimeoutError, asyncio.CancelledError):
-            # Un PDF bomba no debe dejar el proceso ocupado: se mata y se crea otro pool.
+            # Mata el proceso ocupado y crea otro pool.
             self._kill_pool()
             raise
 
     def _kill_pool(self) -> None:
-        # ProcessPoolExecutor no permite cancelar una tarea en curso; se terminan sus procesos.
+        """Termina el pool ocupado y prepara uno nuevo."""
+        # ProcessPoolExecutor no permite cancelar una tarea en curso.
         self.shutdown()
         self._pool = self._new_pool()
 
     def shutdown(self) -> None:
+        """Termina los procesos del pool."""
         for process in list(getattr(self._pool, "_processes", {}).values()):
             process.terminate()
         self._pool.shutdown(wait=False, cancel_futures=True)
@@ -138,7 +143,7 @@ class DocumentIndexer:
                 "document_id": source,
                 "source": f"{self.path_pdf}/{source}.pdf",
                 "chunk_index": i,
-                # Chroma solo admite metadata escalar: páginas como "3,4".
+                # Chroma solo admite metadata escalar.
                 "pages": ",".join(str(page) for page in document.metadata.get("pages", [])),
             }
             # El id se deriva del contenido para evitar duplicados del mismo fragmento.
@@ -215,6 +220,7 @@ class DocumentPipeline:
         return await self.process_study_map(chunks)
 
     async def process_rag(self, document: dict, chunks: list[dict]) -> tuple[dict, int]:
+        """Indexa los fragmentos y genera el resumen del documento."""
         documents = [
             Document(page_content=chunk["page_content"], metadata={"pages": chunk["pages"]})
             for chunk in chunks
@@ -229,6 +235,7 @@ class DocumentPipeline:
         return summary.model_dump(), len(indexer.documents_prepared)
 
     async def process_study_map(self, chunks: list[dict]) -> tuple[dict, int]:
+        """Genera el mapa de estudio del documento."""
         summary = await self._summarize(chunks, MAP_STUDY_PROMPT, MapStudy)
         return summary.model_dump(), 0
 
@@ -241,12 +248,13 @@ class DocumentPipeline:
         return await chain.ainvoke({"documents": text})
 
     async def _reduce(self, chunks: list[dict]) -> str:
+        """Resume cada bloque y une los resúmenes parciales."""
         blocks = split_into_blocks(
             [chunk["page_content"] for chunk in chunks], DOCUMENT_SUMMARY_CHAR_BUDGET // 2
         )
         chain = self.chain_builder.build_chain(self.model, PARTIAL_SUMMARY_PROMPT)
         partials = []
-        # Secuencial a propósito: acota el gasto y el rate limit del proveedor.
+        # Secuencial para acotar el gasto y el rate limit del proveedor.
         for index, block in enumerate(blocks, start=1):
             response = await chain.ainvoke({"block": block, "index": index, "total": len(blocks)})
             partials.append(f"[Parte {index}/{len(blocks)}]\n{response.content}")

@@ -42,6 +42,7 @@ def forget_vector_store(session_id: str) -> None:
 
 
 def format_pages(pages: str) -> str:
+    """Convierte las páginas de un fragmento en texto para citar."""
     numbers = [page for page in (pages or "").split(",") if page]
     if not numbers:
         return "página ?"

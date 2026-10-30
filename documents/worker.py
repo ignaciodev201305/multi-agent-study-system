@@ -53,13 +53,14 @@ async def process_document_job(
 
         saved = await repository.mark_ready(document_id, summary, chunks)
         if not saved and await repository.get_document(document_id) is None:
-            # La sesión se borró durante el procesamiento: se descartan los vectores escritos.
+            # Descarta los vectores si la sesión se borró durante el procesamiento.
             logger.info("Documento descartado por sesión eliminada document_id=%s", document_id)
             if document["document_type"] == "rag":
                 await asyncio.to_thread(_delete_session_vectors, document["chat_id"])
 
 
 def _delete_session_vectors(chat_id: str) -> None:
+    """Borra los vectores de una sesión eliminada."""
     try:
         DocumentIndexer().delete_orphan_vectors(chat_id, set())
     except Exception:

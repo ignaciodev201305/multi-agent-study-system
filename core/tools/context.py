@@ -5,9 +5,10 @@ from dataclasses import dataclass, field
 
 @dataclass
 class TurnContext:
-    # La sesión viene del servidor: una tool nunca puede consultar otra sesión.
+    """Datos del turno que comparten el supervisor y sus tools."""
+    # Sesión actual; no la elige el modelo.
     session_id: str
-    # Documentos ready de la sesión con su resumen (ver DocumentRepository.list_ready_with_summaries).
+    # Documentos listos de la sesión con su resumen.
     documents: list[dict] = field(default_factory=list)
-    # record_progress escribe aquí; el nodo chat lo guarda en el estado de la sesión.
+    # Actualizaciones de record_progress durante el turno.
     progress_updates: dict[str, dict] = field(default_factory=dict)

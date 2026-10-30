@@ -37,7 +37,7 @@ const createMessage = (role: ChatMessage['role'], content: string, agent?: strin
 const setActivityStatus = (activities: GraphActivity[], status: GraphActivity['status']): GraphActivity[] =>
   activities.map((activity) => ({ ...activity, status }));
 
-// Agrega las respuestas que el servidor checkpointeó pero no llegaron por el socket.
+// Agrega las respuestas guardadas en el servidor que no llegaron por el socket.
 const mergeSnapshot = (session: StudySession, snapshot: ChatSnapshot): StudySession => {
   const messages = [...session.messages];
   let changed = false;
@@ -52,7 +52,7 @@ const mergeSnapshot = (session: StudySession, snapshot: ChatSnapshot): StudySess
       continue;
     }
     if (localAssistant.has(serverMessage.content)) continue;
-    // Se inserta tras el mensaje del usuario que lo originó (o al final si no se encuentra).
+    // Se inserta tras el mensaje del usuario que lo originó.
     let insertAt = messages.length;
     if (previousUser !== undefined) {
       for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -321,7 +321,7 @@ export const useStudyStore = create<StudyState>()(
         try {
           snapshot = await fetchChatSnapshot(get().backendUrl, sessionId);
         } catch {
-          // La resincronización es best-effort: el siguiente turno vuelve a intentarlo.
+          // Si falla, el siguiente turno vuelve a intentarlo.
           return;
         }
         set((state) => ({

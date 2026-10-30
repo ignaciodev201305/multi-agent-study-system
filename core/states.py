@@ -22,7 +22,7 @@ class ContextStudyState(TypedDict):
 class StudyState(ContextStudyState):
     """Estado único de la sesión: contexto y turnos comparten thread y checkpointer."""
     summary: str
-    # Documentos ready con su resumen; los carga la API al empezar cada turno.
+    # Documentos listos de la sesión, cargados al empezar cada turno.
     documents: list[dict]
-    # Modelo del alumno: tema -> {"status", "evidence"}; lo escribe la tool record_progress.
+    # Progreso del alumno por tema.
     progress: Annotated[dict, merge_progress]

@@ -67,7 +67,7 @@ class SessionStudyGraph:
             if len(messages) <= SESSION_HISTORY_MAX_MESSAGES:
                 return {}
 
-            # Todo lo que se quita del historial pasa antes por el resumidor.
+            # Resume todo lo que se quita del historial.
             messages_to_summarize = messages[:-SESSION_HISTORY_KEEP_MESSAGES]
             chain = self.chain_builder.build_chain(self.model_context, SUMMARY_PROMPT)
             new_summary = await chain.ainvoke({
@@ -144,6 +144,7 @@ def format_documents_context(documents: list[dict]) -> str:
 
 
 def format_progress(progress: dict) -> str:
+    """Convierte el progreso del alumno en una lista de texto."""
     return "\n".join(
         f"- {topic}: {entry['status']} ({entry['evidence']})" for topic, entry in progress.items()
     )

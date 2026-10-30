@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# CORS envuelve al token y al limitador para que también agregue sus encabezados al 401/413.
+# CORS envuelve a ambos para que también agregue sus encabezados al 401 y al 413.
 app.add_middleware(
     PdfUploadBodyLimitMiddleware,
     max_body_bytes=MAX_UPLOAD_REQUEST_BYTES,
