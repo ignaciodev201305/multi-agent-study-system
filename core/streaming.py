@@ -2,6 +2,8 @@
 
 # Nodos internos cuyos tokens no son parte de la respuesta al alumno.
 INTERNAL_NODES = {"summarize_conversation", "build_study_plan"}
+# Eventos de las tools que pueden llegar al cliente.
+FORWARDED_CUSTOM_EVENTS = {"board_patch"}
 
 
 def token_text(content) -> str:
@@ -23,8 +25,12 @@ async def execute_astream_graph(graph, websocket, graph_input, config):
     interrupt_info = None
     # Sin subgraphs no llegan los tokens de los grafos anidados.
     async for namespace, mode, chunk in graph.astream(
-        graph_input, config, stream_mode=["messages", "values"], subgraphs=True
+        graph_input, config, stream_mode=["messages", "values", "custom"], subgraphs=True
     ):
+        if mode == "custom":
+            if isinstance(chunk, dict) and chunk.get("type") in FORWARDED_CUSTOM_EVENTS:
+                await websocket.send_json(chunk)
+
         if mode == "messages":
             token, metadata = chunk
             node = metadata.get("langgraph_node")
