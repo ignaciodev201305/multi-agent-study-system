@@ -264,6 +264,8 @@ const parseBackendEvent = (value: unknown): BackendEvent | null => {
   }
   if (eventType === 'agent_response') return { type: 'agent_response', content };
   if (eventType === 'status') return { type: 'status', content };
+  // La pizarra aún no se muestra, pero su evento indica que el turno sigue vivo.
+  if (eventType === 'board_patch') return { type: 'status', content };
 
   return null;
 };
