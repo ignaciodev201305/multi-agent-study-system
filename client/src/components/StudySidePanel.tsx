@@ -1,5 +1,6 @@
 import { BoardPanel } from './board/BoardPanel';
 import { ProgressPanel } from './ProgressPanel';
+import { PythonPanel } from './PythonPanel';
 import type { Board, SidePanelTab } from '../types';
 import styles from '../App.module.css';
 
@@ -10,13 +11,18 @@ interface StudySidePanelProps {
   board: Board;
   isBusy: boolean;
   tab: SidePanelTab;
+  pythonCode: string;
   onTabChange: (tab: SidePanelTab) => void;
   onClose: () => void;
+  onPythonCodeChange: (code: string) => void;
+  onOpenInPython: (code: string) => void;
+  onShareWithTutor: (message: string) => void;
 }
 
 const tabs: { id: SidePanelTab; label: string }[] = [
   { id: 'board', label: 'Pizarra' },
   { id: 'progress', label: 'Progreso' },
+  { id: 'python', label: 'Python' },
 ];
 
 export function StudySidePanel({
@@ -26,9 +32,19 @@ export function StudySidePanel({
   board,
   isBusy,
   tab,
+  pythonCode,
   onTabChange,
   onClose,
+  onPythonCodeChange,
+  onOpenInPython,
+  onShareWithTutor,
 }: StudySidePanelProps): JSX.Element {
+  const openInPython = (code: string): void => {
+    const replaces = pythonCode.trim() && pythonCode !== code;
+    if (replaces && !window.confirm('¿Reemplazar el código que tienes en la pestaña Python?')) return;
+    onOpenInPython(code);
+  };
+
   return (
     <aside className={styles.studyPanel} aria-label="Panel de estudio">
       <header className={styles.studyPanelHeader}>
@@ -54,8 +70,15 @@ export function StudySidePanel({
         </button>
       </header>
       <div className={styles.studyPanelBody} role="tabpanel">
-        {tab === 'board' && <BoardPanel board={board} title={title} />}
+        {tab === 'board' && <BoardPanel board={board} onOpenInPython={openInPython} title={title} />}
         {tab === 'progress' && <ProgressPanel backendUrl={backendUrl} isBusy={isBusy} sessionId={sessionId} />}
+        {/* Sigue montado para no perder la ejecución al cambiar de pestaña. */}
+        <PythonPanel
+          code={pythonCode}
+          hidden={tab !== 'python'}
+          onCodeChange={onPythonCodeChange}
+          onShare={onShareWithTutor}
+        />
       </div>
     </aside>
   );

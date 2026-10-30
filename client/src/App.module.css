@@ -155,7 +155,7 @@
 
 .studyPanel { display: flex; flex: 0 0 348px; flex-direction: column; min-width: 0; border-left: 1px solid var(--border); background: var(--sidebar); }
 .studyPanelHeader { display: flex; height: 55px; flex: 0 0 55px; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border); }
-.studyPanelHeader .typeToggle { flex: 1; }
+.studyPanelHeader .typeToggle { flex: 1; grid-auto-columns: 1fr; grid-auto-flow: column; grid-template-columns: none; }
 .studyPanelBody { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: auto; }
 .panelEmpty { display: flex; flex-direction: column; gap: 5px; margin: 14px 12px; border: 1px dashed var(--border-strong); border-radius: 8px; padding: 22px 16px; color: var(--muted); font-size: 12px; }
 .panelEmpty p { margin: 0; color: var(--text); }
@@ -180,6 +180,7 @@
 .boardTable th { background: var(--elevated); }
 .boardCode { min-width: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--sidebar); }
 .boardCodeBar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px 4px 9px; border-bottom: 1px solid var(--border); color: var(--subtle); font-size: 9px; }
+.boardCodeActions { display: inline-flex; align-items: center; gap: 2px; }
 .boardCodeBar button { border: 0; border-radius: 4px; padding: 2px 5px; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; }
 .boardCodeBar button:hover { background: var(--elevated-hover); color: var(--text); }
 .boardCode pre { max-height: 280px; margin: 0; padding: 9px; overflow: auto; font-family: "IBM Plex Mono", monospace; font-size: 11px; line-height: 1.6; }
@@ -204,6 +205,21 @@
 .plotLegend { display: flex; flex-wrap: wrap; gap: 3px 11px; color: var(--muted); font-size: 10px; }
 .plotLegend span { display: inline-flex; min-width: 0; align-items: center; gap: 5px; overflow-wrap: anywhere; }
 .plotLegend i { width: 12px; height: 2px; flex: 0 0 12px; border-radius: 1px; }
+
+.pythonPanel { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 9px; padding: 11px 12px 16px; overflow: auto; }
+.pythonPanel[hidden] { display: none; }
+.pythonEditor { display: block; width: 100%; min-height: 220px; flex: 0 0 auto; resize: vertical; border: 1px solid var(--border-strong); border-radius: 7px; outline: 0; padding: 9px 10px; background: var(--surface); color: var(--text); font-family: "IBM Plex Mono", monospace; font-size: 11px; line-height: 1.6; tab-size: 4; white-space: pre; overflow: auto; }
+.pythonEditor:focus { border-color: var(--accent); }
+.pythonEditor::placeholder { color: var(--subtle); }
+.pythonActions { display: grid; flex: 0 0 auto; gap: 6px; grid-template-columns: 1fr 1fr 1.3fr; }
+.pythonButton { height: 30px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
+.pythonButton:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+.pythonButton:disabled { cursor: default; opacity: .5; }
+.pythonHint { margin: 0; color: var(--subtle); font-size: 10px; line-height: 1.6; }
+.pythonOutput { display: flex; min-width: 0; flex: 0 0 auto; flex-direction: column; gap: 8px; }
+.pythonOutput pre { max-height: 300px; margin: 0; border: 1px solid var(--border); border-radius: 6px; padding: 9px; overflow: auto; background: var(--surface); color: var(--text); font-family: "IBM Plex Mono", monospace; font-size: 11px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pythonOutput pre[data-kind='error'] { border-color: color-mix(in srgb, var(--danger) 38%, transparent); color: var(--danger); }
+.pythonOutput img { display: block; max-width: 100%; height: auto; border-radius: 6px; background: #fff; }
 
 .progressList { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 10px 8px 16px; list-style: none; }
 .progressItem { display: flex; flex-direction: column; gap: 5px; border-radius: 7px; padding: 9px 8px; }

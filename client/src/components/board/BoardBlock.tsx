@@ -7,11 +7,12 @@ import styles from '../../App.module.css';
 
 interface BoardBlockProps {
   block: BoardBlockData;
+  onOpenInPython: (code: string) => void;
 }
 
 const authorLabel = (author: string): string => author.replace(/_/g, ' ');
 
-function BlockContent({ block }: BoardBlockProps): JSX.Element {
+function BlockContent({ block, onOpenInPython }: BoardBlockProps): JSX.Element {
   switch (block.kind) {
     case 'markdown':
       return <MarkdownMessage content={block.text} />;
@@ -52,20 +53,26 @@ function BlockContent({ block }: BoardBlockProps): JSX.Element {
         </div>
       );
     case 'code':
-      return <CodeBlock code={block.code} language={block.language} />;
+      return (
+        <CodeBlock
+          code={block.code}
+          language={block.language}
+          onOpenInPython={block.language === 'python' ? () => onOpenInPython(block.code) : undefined}
+        />
+      );
     case 'plot':
       return <PlotBlock block={block} title={block.title} />;
   }
 }
 
-export function BoardBlock({ block }: BoardBlockProps): JSX.Element {
+export function BoardBlock({ block, onOpenInPython }: BoardBlockProps): JSX.Element {
   return (
     <article className={styles.boardBlock}>
       <header className={styles.boardBlockHeader}>
         <span className={styles.boardBlockTitle}>{block.title}</span>
         <span className={styles.boardBlockAuthor}>{authorLabel(block.author)}</span>
       </header>
-      <BlockContent block={block} />
+      <BlockContent block={block} onOpenInPython={onOpenInPython} />
     </article>
   );
 }

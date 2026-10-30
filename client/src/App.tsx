@@ -24,6 +24,12 @@ export default function App(): JSX.Element {
   const sidePanelTab = useStudyStore((state) => state.sidePanelTab);
   const setSidePanelOpen = useStudyStore((state) => state.setSidePanelOpen);
   const setSidePanelTab = useStudyStore((state) => state.setSidePanelTab);
+  const pythonCode = useStudyStore((state) => state.pythonCode[state.activeSessionId] ?? '');
+  const composerDraft = useStudyStore((state) => state.composerDraft);
+  const setPythonCode = useStudyStore((state) => state.setPythonCode);
+  const openInPython = useStudyStore((state) => state.openInPython);
+  const setComposerDraft = useStudyStore((state) => state.setComposerDraft);
+  const clearComposerDraft = useStudyStore((state) => state.clearComposerDraft);
   const createSession = useStudyStore((state) => state.createSession);
   const deleteSession = useStudyStore((state) => state.deleteSession);
   const selectSession = useStudyStore((state) => state.selectSession);
@@ -68,16 +74,22 @@ export default function App(): JSX.Element {
         <SessionView
           backendUrl={backendUrl}
           board={board}
+          composerDraft={composerDraft?.sessionId === activeSession.id ? composerDraft.content : undefined}
           error={errors[activeSession.id]}
           graphActivities={graphActivities}
           isBusy={(connectionStates[activeSession.id] ?? 'idle') === 'connecting'}
           onBack={goHome}
+          onComposerDraftApplied={clearComposerDraft}
           onDismissError={() => clearError(activeSession.id)}
+          onOpenInPython={(code) => openInPython(activeSession.id, code)}
+          onPythonCodeChange={(code) => setPythonCode(activeSession.id, code)}
           onSend={sendMessage}
+          onShareWithTutor={(message) => setComposerDraft(activeSession.id, message)}
           onSidePanelOpenChange={setSidePanelOpen}
           onSidePanelTabChange={setSidePanelTab}
           onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           onUploaded={(document) => addDocument(activeSession.id, document)}
+          pythonCode={pythonCode}
           session={activeSession}
           sidePanelOpen={sidePanelOpen}
           sidePanelTab={sidePanelTab}

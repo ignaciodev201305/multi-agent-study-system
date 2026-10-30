@@ -25,6 +25,8 @@ interface SessionViewProps {
   board: Board;
   sidePanelOpen: boolean;
   sidePanelTab: SidePanelTab;
+  pythonCode: string;
+  composerDraft?: string;
   onToggleTheme: () => void;
   onBack: () => void;
   onSend: (content: string) => void;
@@ -32,6 +34,10 @@ interface SessionViewProps {
   onUploaded: (document: UploadedDocument) => void;
   onSidePanelOpenChange: (open: boolean) => void;
   onSidePanelTabChange: (tab: SidePanelTab) => void;
+  onPythonCodeChange: (code: string) => void;
+  onOpenInPython: (code: string) => void;
+  onShareWithTutor: (message: string) => void;
+  onComposerDraftApplied: () => void;
 }
 
 const phaseText: Record<StudyPhase, string> = {
@@ -51,6 +57,8 @@ export function SessionView({
   board,
   sidePanelOpen,
   sidePanelTab,
+  pythonCode,
+  composerDraft,
   onToggleTheme,
   onBack,
   onSend,
@@ -58,6 +66,10 @@ export function SessionView({
   onUploaded,
   onSidePanelOpenChange,
   onSidePanelTabChange,
+  onPythonCodeChange,
+  onOpenInPython,
+  onShareWithTutor,
+  onComposerDraftApplied,
 }: SessionViewProps): JSX.Element {
   return (
     <div className={styles.appShell}>
@@ -104,7 +116,13 @@ export function SessionView({
           phase={session.phase}
           title={session.title}
         />
-        <Composer isBusy={isBusy} onSend={onSend} phase={session.phase} />
+        <Composer
+          draft={composerDraft}
+          isBusy={isBusy}
+          onDraftApplied={onComposerDraftApplied}
+          onSend={onSend}
+          phase={session.phase}
+        />
       </section>
       {sidePanelOpen && (
         <StudySidePanel
@@ -113,7 +131,11 @@ export function SessionView({
           isBusy={isBusy}
           key={session.id}
           onClose={() => onSidePanelOpenChange(false)}
+          onOpenInPython={onOpenInPython}
+          onPythonCodeChange={onPythonCodeChange}
+          onShareWithTutor={onShareWithTutor}
           onTabChange={onSidePanelTabChange}
+          pythonCode={pythonCode}
           sessionId={session.id}
           tab={sidePanelTab}
           title={session.title}

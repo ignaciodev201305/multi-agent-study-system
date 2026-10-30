@@ -8,6 +8,7 @@ import type {
   BoardPatch,
   ChatMessage,
   ChatSnapshot,
+  ComposerDraft,
   ConnectionStatus,
   GraphActivity,
   SidePanelTab,
@@ -18,6 +19,7 @@ import type {
 
 const DEFAULT_BACKEND_URL = 'ws://127.0.0.1:8000';
 const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
+const MAX_PYTHON_CODE_CHARS = 20_000;
 const TURN_POLL_INTERVAL_MS = 3_000;
 const TURN_POLL_MAX_ATTEMPTS = 60;
 
@@ -121,6 +123,7 @@ interface PersistedState {
   authToken: string;
   sidePanelOpen: boolean;
   sidePanelTab: SidePanelTab;
+  pythonCode: Record<string, string | undefined>;
 }
 
 interface StudyState extends PersistedState {
@@ -131,8 +134,13 @@ interface StudyState extends PersistedState {
   graphActivities: Record<string, GraphActivity[] | undefined>;
   // La fuente de verdad es el servidor: no se guarda en el navegador.
   boards: Record<string, Board | undefined>;
+  composerDraft: ComposerDraft | null;
   setSidePanelOpen: (open: boolean) => void;
   setSidePanelTab: (tab: SidePanelTab) => void;
+  setPythonCode: (sessionId: string, code: string) => void;
+  openInPython: (sessionId: string, code: string) => void;
+  setComposerDraft: (sessionId: string, content: string) => void;
+  clearComposerDraft: () => void;
   createSession: () => void;
   deleteSession: (sessionId: string) => Promise<void>;
   selectSession: (sessionId: string) => void;
@@ -164,12 +172,24 @@ export const useStudyStore = create<StudyState>()(
       authToken: '',
       sidePanelOpen: true,
       sidePanelTab: 'board',
+      pythonCode: {},
       connectionStates: {},
       errors: {},
       graphActivities: {},
       boards: {},
+      composerDraft: null,
       setSidePanelOpen: (sidePanelOpen) => set({ sidePanelOpen }),
       setSidePanelTab: (sidePanelTab) => set({ sidePanelTab }),
+      setPythonCode: (sessionId, code) => set((state) => ({
+        pythonCode: { ...state.pythonCode, [sessionId]: code.slice(0, MAX_PYTHON_CODE_CHARS) },
+      })),
+      openInPython: (sessionId, code) => set((state) => ({
+        pythonCode: { ...state.pythonCode, [sessionId]: code.slice(0, MAX_PYTHON_CODE_CHARS) },
+        sidePanelOpen: true,
+        sidePanelTab: 'python',
+      })),
+      setComposerDraft: (sessionId, content) => set({ composerDraft: { sessionId, content } }),
+      clearComposerDraft: () => set({ composerDraft: null }),
       createSession: () => {
         const session = createSession();
         set((state) => ({
@@ -197,10 +217,12 @@ export const useStudyStore = create<StudyState>()(
           const errors = { ...state.errors };
           const graphActivities = { ...state.graphActivities };
           const boards = { ...state.boards };
+          const pythonCode = { ...state.pythonCode };
           delete connectionStates[sessionId];
           delete errors[sessionId];
           delete graphActivities[sessionId];
           delete boards[sessionId];
+          delete pythonCode[sessionId];
 
           return {
             sessions,
@@ -211,6 +233,7 @@ export const useStudyStore = create<StudyState>()(
             errors,
             graphActivities,
             boards,
+            pythonCode,
           };
         });
       },
@@ -457,6 +480,7 @@ export const useStudyStore = create<StudyState>()(
         authToken: state.authToken,
         sidePanelOpen: state.sidePanelOpen,
         sidePanelTab: state.sidePanelTab,
+        pythonCode: state.pythonCode,
       }),
       merge: (persisted, current) => {
         const saved = persisted as Partial<PersistedState>;

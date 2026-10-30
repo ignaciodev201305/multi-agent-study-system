@@ -1,9 +1,11 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import styles from '../App.module.css';
 
 interface ComposerProps {
   phase: 'setup' | 'clarification' | 'study';
   isBusy: boolean;
+  draft?: string;
+  onDraftApplied: () => void;
   onSend: (content: string) => void;
 }
 
@@ -13,8 +15,23 @@ const placeholders: Record<ComposerProps['phase'], string> = {
   study: 'Escribe un mensaje…',
 };
 
-export function Composer({ phase, isBusy, onSend }: ComposerProps): JSX.Element {
+const resize = (target: HTMLTextAreaElement): void => {
+  target.style.height = 'auto';
+  target.style.height = `${Math.min(target.scrollHeight, 180)}px`;
+};
+
+export function Composer({ phase, isBusy, draft, onDraftApplied, onSend }: ComposerProps): JSX.Element {
   const input = useRef<HTMLTextAreaElement>(null);
+
+  // Rellena el texto para que el alumno lo revise; nunca se envía solo.
+  useEffect(() => {
+    const target = input.current;
+    if (!target || !draft) return;
+    target.value = target.value.trim() ? `${target.value.trimEnd()}\n\n${draft}` : draft;
+    resize(target);
+    target.focus();
+    onDraftApplied();
+  }, [draft, onDraftApplied]);
 
   const submit = (): void => {
     const value = input.current?.value ?? '';
@@ -39,11 +56,7 @@ export function Composer({ phase, isBusy, onSend }: ComposerProps): JSX.Element 
           aria-label="Mensaje"
           data-composer="true"
           disabled={isBusy}
-          onInput={(event) => {
-            const target = event.currentTarget;
-            target.style.height = 'auto';
-            target.style.height = `${Math.min(target.scrollHeight, 180)}px`;
-          }}
+          onInput={(event) => resize(event.currentTarget)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault();

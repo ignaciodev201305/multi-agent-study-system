@@ -7,9 +7,10 @@ import styles from '../../App.module.css';
 interface BoardPanelProps {
   board: Board;
   title: string;
+  onOpenInPython: (code: string) => void;
 }
 
-export function BoardPanel({ board, title }: BoardPanelProps): JSX.Element {
+export function BoardPanel({ board, title, onOpenInPython }: BoardPanelProps): JSX.Element {
   const list = useRef<HTMLDivElement>(null);
   const blockCount = board.blocks.length;
 
@@ -37,7 +38,7 @@ export function BoardPanel({ board, title }: BoardPanelProps): JSX.Element {
         </button>
       </div>
       <div className={styles.boardList} ref={list}>
-        {board.blocks.map((block) => <BoardBlock block={block} key={block.id} />)}
+        {board.blocks.map((block) => <BoardBlock block={block} key={block.id} onOpenInPython={onOpenInPython} />)}
       </div>
     </>
   );
