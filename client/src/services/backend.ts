@@ -1,9 +1,14 @@
 import type {
   BackendDocument,
   BackendEvent,
+  Board,
+  BoardBlock,
+  BoardPatch,
+  ChatProgress,
   ChatSnapshot,
   DocumentProcessingStatus,
   DocumentType,
+  DueReview,
   ThinkingMetadata,
 } from '../types';
 
@@ -54,6 +59,10 @@ const WS_CLOSE_SUPERSEDED = 4000;
 const WS_CLOSE_POLICY_VIOLATION = 1008;
 // Errores tras los que la conexión sigue abierta y se puede volver a enviar.
 const RECOVERABLE_ERROR_CODES = new Set(['invalid_message', 'turn_in_progress', 'message_too_long', 'rate_limited']);
+// Agrupa los fragmentos: renderizar la sesión con cada uno bloquea la interfaz.
+const THINKING_FLUSH_MS = 100;
+
+type ThinkingEvent = Extract<BackendEvent, { type: 'thinking' }>;
 
 const websocketUrl = (baseUrl: string, sessionId: string): string => {
   let url: URL;
@@ -177,7 +186,39 @@ export const fetchChatSnapshot = async (
   if (!response.ok || typeof payload !== 'object' || payload === null || !('messages' in payload)) {
     throw new Error('No se pudo consultar el historial de la sesión.');
   }
-  return payload as ChatSnapshot;
+  const snapshot = payload as ChatSnapshot;
+  return { ...snapshot, board: parseBoard(snapshot.board) };
+};
+
+export const fetchChatProgress = async (baseUrl: string, sessionId: string): Promise<ChatProgress> => {
+  let response: Response;
+  try {
+    response = await fetch(
+      httpUrl(baseUrl, `/chats/${encodeURIComponent(sessionId)}/progress`),
+      { cache: 'no-store', headers: authHeaders() },
+    );
+  } catch {
+    throw new Error('No se pudo consultar el progreso de la sesión.');
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok || !isRecord(payload) || !Array.isArray(payload.syllabus) || !Array.isArray(payload.topics)) {
+    throw new Error('No se pudo consultar el progreso de la sesión.');
+  }
+  return payload as unknown as ChatProgress;
+};
+
+export const fetchDueReviews = async (baseUrl: string): Promise<DueReview[]> => {
+  let response: Response;
+  try {
+    response = await fetch(httpUrl(baseUrl, '/reviews/due'), { cache: 'no-store', headers: authHeaders() });
+  } catch {
+    throw new Error('No se pudieron consultar los repasos.');
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok || !isRecord(payload) || !Array.isArray(payload.reviews)) {
+    throw new Error('No se pudieron consultar los repasos.');
+  }
+  return payload.reviews as DueReview[];
 };
 
 export const deleteChat = async (baseUrl: string, sessionId: string): Promise<void> => {
@@ -197,6 +238,52 @@ export const deleteChat = async (baseUrl: string, sessionId: string): Promise<vo
       : undefined;
     throw new Error(typeof detail === 'string' ? detail : 'No se pudo eliminar la sesión.');
   }
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isStringList = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+const isBoardBlock = (value: unknown): value is BoardBlock => {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.author !== 'string') return false;
+  switch (value.kind) {
+    case 'markdown':
+      return typeof value.text === 'string';
+    case 'math':
+      return typeof value.latex === 'string';
+    case 'steps':
+      return Array.isArray(value.steps)
+        && value.steps.every((step) => isRecord(step) && typeof step.text === 'string');
+    case 'table':
+      return isStringList(value.headers) && Array.isArray(value.rows) && value.rows.every(isStringList);
+    case 'code':
+      return typeof value.code === 'string' && (value.language === 'python' || value.language === 'text');
+    case 'plot':
+      return typeof value.x_min === 'number' && typeof value.x_max === 'number'
+        && Array.isArray(value.functions)
+        && value.functions.every((item) => isRecord(item)
+          && typeof item.expression === 'string' && Array.isArray(item.points));
+    default:
+      return false;
+  }
+};
+
+const parseBoard = (value: unknown): Board | undefined => {
+  if (!isRecord(value) || !Array.isArray(value.blocks) || typeof value.revision !== 'number') return undefined;
+  return { blocks: value.blocks.filter(isBoardBlock), revision: value.revision };
+};
+
+const parseBoardPatch = (value: object, content: string): BoardPatch | null => {
+  const { revision, op, block, block_id: blockId } = value as Record<string, unknown>;
+  if (typeof revision !== 'number') return null;
+  if (op === 'upsert' && isBoardBlock(block)) return { type: 'board_patch', content, revision, op, block };
+  if (op === 'remove' && typeof blockId === 'string') {
+    return { type: 'board_patch', content, revision, op, block_id: blockId };
+  }
+  if (op === 'clear') return { type: 'board_patch', content, revision, op };
+  return null;
 };
 
 const parseThinkingMetadata = (value: unknown): ThinkingMetadata | undefined => {
@@ -264,8 +351,7 @@ const parseBackendEvent = (value: unknown): BackendEvent | null => {
   }
   if (eventType === 'agent_response') return { type: 'agent_response', content };
   if (eventType === 'status') return { type: 'status', content };
-  // La pizarra aún no se muestra, pero su evento indica que el turno sigue vivo.
-  if (eventType === 'board_patch') return { type: 'status', content };
+  if (eventType === 'board_patch') return parseBoardPatch(value, content);
 
   return null;
 };
@@ -273,6 +359,8 @@ const parseBackendEvent = (value: unknown): BackendEvent | null => {
 export class BackendConnection {
   private readonly socket: WebSocket;
   private timeout: ReturnType<typeof setTimeout> | undefined;
+  private pendingThinking: ThinkingEvent | null = null;
+  private thinkingTimer: ReturnType<typeof setTimeout> | undefined;
   private hasFailed = false;
 
   constructor(url: string, private readonly callbacks: BackendCallbacks) {
@@ -309,6 +397,8 @@ export class BackendConnection {
   close(): void {
     this.hasFailed = true;
     this.clearTimeout();
+    clearTimeout(this.thinkingTimer);
+    this.pendingThinking = null;
     this.socket.close();
   }
 
@@ -332,6 +422,15 @@ export class BackendConnection {
       return;
     }
 
+    if (event.type === 'thinking') {
+      this.restartTimeout();
+      this.queueThinking(event);
+      return;
+    }
+
+    // Lo acumulado debe llegar antes que el evento que sigue.
+    this.flushThinking();
+
     if (event.type === 'error') {
       this.callbacks.onEvent(event);
       if (RECOVERABLE_ERROR_CODES.has(event.code)) {
@@ -351,7 +450,8 @@ export class BackendConnection {
       return;
     }
 
-    if (event.type === 'thinking') {
+    // Este evento llega a mitad de turno y no lo termina.
+    if (event.type === 'board_patch') {
       this.restartTimeout();
     } else {
       this.clearTimeout();
@@ -359,6 +459,24 @@ export class BackendConnection {
 
     this.callbacks.onEvent(event);
   };
+
+  private queueThinking(event: ThinkingEvent): void {
+    const pending = this.pendingThinking;
+    if (pending && pending.metadata?.node === event.metadata?.node && pending.metadata?.step === event.metadata?.step) {
+      pending.content += event.content;
+      return;
+    }
+    this.flushThinking();
+    this.pendingThinking = { ...event };
+    this.thinkingTimer = setTimeout(() => this.flushThinking(), THINKING_FLUSH_MS);
+  }
+
+  private flushThinking(): void {
+    clearTimeout(this.thinkingTimer);
+    const pending = this.pendingThinking;
+    this.pendingThinking = null;
+    if (pending) this.callbacks.onEvent(pending);
+  }
 
   private readonly handleError = (): void => {
     this.fail('No se pudo conectar con el backend. Comprueba que el servicio esté iniciado.');
@@ -371,6 +489,7 @@ export class BackendConnection {
     }
     if (event.code === WS_CLOSE_SUPERSEDED) {
       // Otra conexión de esta sesión la reemplazó; no es un error.
+      this.flushThinking();
       this.hasFailed = true;
       this.clearTimeout();
       return;
@@ -393,6 +512,7 @@ export class BackendConnection {
 
   private fail(message: string): void {
     if (this.hasFailed) return;
+    this.flushThinking();
     this.hasFailed = true;
     this.clearTimeout();
     this.callbacks.onError(message);

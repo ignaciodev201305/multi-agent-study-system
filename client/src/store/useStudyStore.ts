@@ -4,16 +4,31 @@ import { backendConnections, deleteChat, fetchChatSnapshot, setAuthToken as setB
 import type {
   AppView,
   BackendEvent,
+  Board,
+  BoardPatch,
   ChatMessage,
   ChatSnapshot,
   ConnectionStatus,
   GraphActivity,
+  SidePanelTab,
   StudySession,
   Theme,
   UploadedDocument,
 } from '../types';
 
 const DEFAULT_BACKEND_URL = 'ws://127.0.0.1:8000';
+const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
+const TURN_POLL_INTERVAL_MS = 3_000;
+const TURN_POLL_MAX_ATTEMPTS = 60;
+
+// Seguimiento por sesión de un turno que corre sin socket, por ejemplo tras recargar.
+const turnPolls = new Map<string, { timer: ReturnType<typeof setTimeout>; attempts: number }>();
+
+const stopTurnPoll = (sessionId: string): void => {
+  const poll = turnPolls.get(sessionId);
+  if (poll) clearTimeout(poll.timer);
+  turnPolls.delete(sessionId);
+};
 
 const createId = (): string => crypto.randomUUID();
 
@@ -36,6 +51,23 @@ const createMessage = (role: ChatMessage['role'], content: string, agent?: strin
 
 const setActivityStatus = (activities: GraphActivity[], status: GraphActivity['status']): GraphActivity[] =>
   activities.map((activity) => ({ ...activity, status }));
+
+const applyBoardPatch = (board: Board, patch: BoardPatch): Board => {
+  if (patch.op === 'clear') return { blocks: [], revision: patch.revision };
+  if (patch.op === 'remove') {
+    return {
+      blocks: board.blocks.filter((block) => block.id !== patch.block_id),
+      revision: patch.revision,
+    };
+  }
+  const exists = board.blocks.some((block) => block.id === patch.block.id);
+  return {
+    blocks: exists
+      ? board.blocks.map((block) => block.id === patch.block.id ? patch.block : block)
+      : [...board.blocks, patch.block],
+    revision: patch.revision,
+  };
+};
 
 // Agrega las respuestas guardadas en el servidor que no llegaron por el socket.
 const mergeSnapshot = (session: StudySession, snapshot: ChatSnapshot): StudySession => {
@@ -87,6 +119,8 @@ interface PersistedState {
   theme: Theme;
   backendUrl: string;
   authToken: string;
+  sidePanelOpen: boolean;
+  sidePanelTab: SidePanelTab;
 }
 
 interface StudyState extends PersistedState {
@@ -95,6 +129,10 @@ interface StudyState extends PersistedState {
   connectionStates: Record<string, ConnectionStatus>;
   errors: Record<string, string | undefined>;
   graphActivities: Record<string, GraphActivity[] | undefined>;
+  // La fuente de verdad es el servidor: no se guarda en el navegador.
+  boards: Record<string, Board | undefined>;
+  setSidePanelOpen: (open: boolean) => void;
+  setSidePanelTab: (tab: SidePanelTab) => void;
   createSession: () => void;
   deleteSession: (sessionId: string) => Promise<void>;
   selectSession: (sessionId: string) => void;
@@ -124,9 +162,14 @@ export const useStudyStore = create<StudyState>()(
       theme: 'dark',
       backendUrl: DEFAULT_BACKEND_URL,
       authToken: '',
+      sidePanelOpen: true,
+      sidePanelTab: 'board',
       connectionStates: {},
       errors: {},
       graphActivities: {},
+      boards: {},
+      setSidePanelOpen: (sidePanelOpen) => set({ sidePanelOpen }),
+      setSidePanelTab: (sidePanelTab) => set({ sidePanelTab }),
       createSession: () => {
         const session = createSession();
         set((state) => ({
@@ -139,6 +182,7 @@ export const useStudyStore = create<StudyState>()(
       },
       deleteSession: async (sessionId) => {
         const { backendUrl } = get();
+        stopTurnPoll(sessionId);
         backendConnections.remove(sessionId);
         await deleteChat(backendUrl, sessionId);
         set((state) => {
@@ -152,9 +196,11 @@ export const useStudyStore = create<StudyState>()(
           const connectionStates = { ...state.connectionStates };
           const errors = { ...state.errors };
           const graphActivities = { ...state.graphActivities };
+          const boards = { ...state.boards };
           delete connectionStates[sessionId];
           delete errors[sessionId];
           delete graphActivities[sessionId];
+          delete boards[sessionId];
 
           return {
             sessions,
@@ -164,10 +210,15 @@ export const useStudyStore = create<StudyState>()(
             connectionStates,
             errors,
             graphActivities,
+            boards,
           };
         });
       },
-      selectSession: (sessionId) => set({ activeSessionId: sessionId, view: 'session' }),
+      selectSession: (sessionId) => {
+        set({ activeSessionId: sessionId, view: 'session' });
+        // La pizarra no se guarda en el navegador: se pide al abrir la sesión.
+        void get().resyncSession(sessionId);
+      },
       goHome: () => set((state) => ({
         view: 'home',
         activeSessionId: state.draftSession ? '' : state.activeSessionId,
@@ -264,6 +315,18 @@ export const useStudyStore = create<StudyState>()(
           return;
         }
 
+        if (event.type === 'board_patch') {
+          const board = get().boards[sessionId] ?? EMPTY_BOARD;
+          if (event.revision !== board.revision + 1) {
+            void get().resyncSession(sessionId);
+            return;
+          }
+          set((state) => ({
+            boards: { ...state.boards, [sessionId]: applyBoardPatch(board, event) },
+          }));
+          return;
+        }
+
         set((state) => {
           const session = state.sessions.find((candidate) => candidate.id === sessionId);
           if (!session) return state;
@@ -315,6 +378,9 @@ export const useStudyStore = create<StudyState>()(
             graphActivities,
           };
         });
+
+        // Recupera los parches que se perdieron durante el turno.
+        if (event.type === 'agent_response') void get().resyncSession(sessionId);
       },
       resyncSession: async (sessionId) => {
         let snapshot: ChatSnapshot;
@@ -322,30 +388,60 @@ export const useStudyStore = create<StudyState>()(
           snapshot = await fetchChatSnapshot(get().backendUrl, sessionId);
         } catch {
           // Si falla, el siguiente turno vuelve a intentarlo.
+          stopTurnPoll(sessionId);
           return;
         }
-        set((state) => ({
-          sessions: state.sessions.map((session) => session.id === sessionId
-            ? mergeSnapshot(session, snapshot)
-            : session),
-        }));
+        set((state) => {
+          const local = state.boards[sessionId];
+          // Durante el turno, el checkpoint va por detrás de los parches ya aplicados.
+          const isBehind = state.connectionStates[sessionId] === 'connecting'
+            && local !== undefined
+            && snapshot.board !== undefined
+            && snapshot.board.revision < local.revision;
+          return {
+            sessions: state.sessions.map((session) => session.id === sessionId
+              ? mergeSnapshot(session, snapshot)
+              : session),
+            boards: snapshot.board && !isBehind
+              ? { ...state.boards, [sessionId]: snapshot.board }
+              : state.boards,
+          };
+        });
+
+        // Con socket conectado, el resultado llega por sus eventos.
+        const attempts = (turnPolls.get(sessionId)?.attempts ?? 0) + 1;
+        stopTurnPoll(sessionId);
+        const state = get();
+        if (
+          snapshot.turn_active
+          && state.connectionStates[sessionId] !== 'connecting'
+          && state.sessions.some((session) => session.id === sessionId)
+          && attempts <= TURN_POLL_MAX_ATTEMPTS
+        ) {
+          const timer = setTimeout(() => void get().resyncSession(sessionId), TURN_POLL_INTERVAL_MS);
+          turnPolls.set(sessionId, { timer, attempts });
+        }
       },
       setConnectionStatus: (sessionId, status) => set((state) => ({
         connectionStates: { ...state.connectionStates, [sessionId]: status },
       })),
-      setError: (sessionId, message) => set((state) => {
-        const graphActivities = state.graphActivities[sessionId]
-          ? {
-              ...state.graphActivities,
-              [sessionId]: setActivityStatus(state.graphActivities[sessionId] ?? [], 'error'),
-            }
-          : state.graphActivities;
-        return {
-          connectionStates: { ...state.connectionStates, [sessionId]: 'error' },
-          errors: { ...state.errors, [sessionId]: message },
-          graphActivities,
-        };
-      }),
+      setError: (sessionId, message) => {
+        set((state) => {
+          const graphActivities = state.graphActivities[sessionId]
+            ? {
+                ...state.graphActivities,
+                [sessionId]: setActivityStatus(state.graphActivities[sessionId] ?? [], 'error'),
+              }
+            : state.graphActivities;
+          return {
+            connectionStates: { ...state.connectionStates, [sessionId]: 'error' },
+            errors: { ...state.errors, [sessionId]: message },
+            graphActivities,
+          };
+        });
+        // Revierte los parches de un turno fallido.
+        void get().resyncSession(sessionId);
+      },
       clearError: (sessionId) => set((state) => ({
         errors: { ...state.errors, [sessionId]: undefined },
       })),
@@ -359,6 +455,8 @@ export const useStudyStore = create<StudyState>()(
         theme: state.theme,
         backendUrl: state.backendUrl,
         authToken: state.authToken,
+        sidePanelOpen: state.sidePanelOpen,
+        sidePanelTab: state.sidePanelTab,
       }),
       merge: (persisted, current) => {
         const saved = persisted as Partial<PersistedState>;
@@ -377,6 +475,7 @@ export const useStudyStore = create<StudyState>()(
           connectionStates: {},
           errors: {},
           graphActivities: {},
+          boards: {},
         };
       },
     },
