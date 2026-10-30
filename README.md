@@ -35,7 +35,6 @@ Archivos de la raíz:
 | `.gitignore` | Excluye `.venv/`, `.env`, `__pycache__/` y `data/` del repositorio. |
 | `.env.example` | Plantilla de variables de entorno. |
 | `requirements.txt` | Dependencias de Python con versiones fijadas. |
-| `NOTAS_TEST_CACHE.md` | Explicación del test de la caché. |
 
 ## Configuración
 
@@ -49,8 +48,9 @@ cp .env.example .env
 |---|---|
 | `OPENAI_API_KEY` | Clave de OpenRouter, usada por el backend como clave de un proveedor compatible con OpenAI. |
 | `TAVILY_API_KEY` | Clave de Tavily para la búsqueda web del clasificador de contexto. |
+| `APP_TOKEN` | Token local obligatorio. La API lo exige en HTTP (`Authorization: Bearer`) y en el WebSocket (subprotocolo `token.<APP_TOKEN>`); sin él no arranca. Genéralo con `python -c "import secrets; print(secrets.token_hex(32))"` y pégalo en el campo «Token local» de la pantalla de inicio del cliente. |
 
-Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3) y `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100).
+Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000) y `WS_MAX_TURNS_PER_MINUTE` (20).
 
 ## Levantar con Docker
 
@@ -68,7 +68,7 @@ docker compose up --build
 | `backend` | http://127.0.0.1:8000 | API y WebSocket `/ws/{thread_id}`. |
 | `backend` | http://127.0.0.1:8000/docs | Documentación interactiva de la API. |
 
-Abre la interfaz en `127.0.0.1:5173`. Por defecto, la interfaz se conecta a `ws://127.0.0.1:8000`, el puerto del backend publicado en el host.
+Abre la interfaz en `127.0.0.1:5173` y escribe el `APP_TOKEN` en la pantalla de inicio. Por defecto, la interfaz se conecta a `ws://127.0.0.1:8000`. Ambos puertos se publican solo en `127.0.0.1`, no en la LAN.
 
 Comandos útiles:
 
@@ -101,7 +101,7 @@ Cliente: ver [client/README.md](client/README.md).
 ## Tests
 
 ```bash
-.venv/bin/python -m unittest tests.test_session_study_graph_cache
+.venv/bin/python -m unittest discover tests
 ```
 
-Qué comprueba el test: [NOTAS_TEST_CACHE.md](NOTAS_TEST_CACHE.md).
+Los grafos y el LLM se simulan: los tests no necesitan claves ni red.

@@ -35,8 +35,26 @@ export type BackendCallbacks = {
 };
 
 const INACTIVITY_TIMEOUT_MS = 120_000;
+// Subprotocolo de la app; el token viaja como un segundo subprotocolo "token.<APP_TOKEN>"
+// porque el navegador no permite cabeceras en el WebSocket.
+const WS_APP_SUBPROTOCOL = 'study.v1';
+
+let authToken = '';
+
+export const setAuthToken = (token: string): void => {
+  authToken = token.trim();
+};
+
+const authHeaders = (): Record<string, string> =>
+  authToken ? { Authorization: `Bearer ${authToken}` } : {};
+
+const websocketProtocols = (): string[] =>
+  authToken ? [WS_APP_SUBPROTOCOL, `token.${authToken}`] : [WS_APP_SUBPROTOCOL];
 // Código con que el servidor cierra una conexión reemplazada por otra más nueva.
 const WS_CLOSE_SUPERSEDED = 4000;
+const WS_CLOSE_POLICY_VIOLATION = 1008;
+// Errores tras los que la conexión sigue abierta y se puede volver a enviar.
+const RECOVERABLE_ERROR_CODES = new Set(['invalid_message', 'turn_in_progress', 'message_too_long', 'rate_limited']);
 
 const websocketUrl = (baseUrl: string, sessionId: string): string => {
   let url: URL;
@@ -94,6 +112,7 @@ export const uploadPdf = async (
     response = await fetch(uploadUrl(baseUrl, sessionId), {
       method: 'POST',
       body: formData,
+      headers: authHeaders(),
     });
   } catch {
     throw new Error('No se pudo conectar con el backend para subir el PDF.');
@@ -118,7 +137,7 @@ export const listChatPdfs = async (
   try {
     response = await fetch(
       httpUrl(baseUrl, `/chats/${encodeURIComponent(sessionId)}/pdfs`),
-      { cache: 'no-store' },
+      { cache: 'no-store', headers: authHeaders() },
     );
   } catch {
     throw new Error('No se pudo consultar el estado de los documentos.');
@@ -150,7 +169,7 @@ export const fetchChatSnapshot = async (
   try {
     response = await fetch(
       httpUrl(baseUrl, `/chats/${encodeURIComponent(sessionId)}/messages`),
-      { cache: 'no-store' },
+      { cache: 'no-store', headers: authHeaders() },
     );
   } catch {
     throw new Error('No se pudo consultar el historial de la sesión.');
@@ -167,7 +186,7 @@ export const deleteChat = async (baseUrl: string, sessionId: string): Promise<vo
 
   let response: Response;
   try {
-    response = await fetch(target, { method: 'DELETE' });
+    response = await fetch(target, { method: 'DELETE', headers: authHeaders() });
   } catch {
     throw new Error('No se pudo conectar con el backend para eliminar la sesión.');
   }
@@ -256,7 +275,7 @@ export class BackendConnection {
   private hasFailed = false;
 
   constructor(url: string, private readonly callbacks: BackendCallbacks) {
-    this.socket = new WebSocket(url);
+    this.socket = new WebSocket(url, websocketProtocols());
     this.socket.addEventListener('open', this.handleOpen);
     this.socket.addEventListener('message', this.handleMessage);
     this.socket.addEventListener('error', this.handleError);
@@ -314,7 +333,7 @@ export class BackendConnection {
 
     if (event.type === 'error') {
       this.callbacks.onEvent(event);
-      if (event.code === 'invalid_message' || event.code === 'turn_in_progress') {
+      if (RECOVERABLE_ERROR_CODES.has(event.code)) {
         this.restartTimeout();
       } else {
         this.hasFailed = true;
@@ -345,6 +364,10 @@ export class BackendConnection {
   };
 
   private readonly handleClose = (event: CloseEvent): void => {
+    if (event.code === WS_CLOSE_POLICY_VIOLATION && event.reason === 'unauthorized') {
+      this.fail('El backend rechazó el token. Revisa el token local en la pantalla de inicio.');
+      return;
+    }
     if (event.code === WS_CLOSE_SUPERSEDED) {
       // Otra conexión de esta sesión tomó el relevo; no es un error.
       this.hasFailed = true;

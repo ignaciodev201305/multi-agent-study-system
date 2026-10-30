@@ -6,10 +6,12 @@ interface WelcomeViewProps {
   sessions: StudySession[];
   theme: Theme;
   backendUrl: string;
+  authToken: string;
   onCreateSession: () => void;
   onOpenSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => Promise<void>;
   onBackendUrlChange: (url: string) => void;
+  onAuthTokenChange: (token: string) => void;
   onToggleTheme: () => void;
 }
 
@@ -32,10 +34,12 @@ export function WelcomeView({
   sessions,
   theme,
   backendUrl,
+  authToken,
   onCreateSession,
   onOpenSession,
   onDeleteSession,
   onBackendUrlChange,
+  onAuthTokenChange,
   onToggleTheme,
 }: WelcomeViewProps): JSX.Element {
   const orderedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -93,6 +97,16 @@ export function WelcomeView({
               spellCheck={false}
               type="url"
               value={backendUrl}
+            />
+            <label className={styles.backendLabel} htmlFor="backend-token">Token local (APP_TOKEN)</label>
+            <input
+              autoCapitalize="off"
+              autoComplete="off"
+              id="backend-token"
+              onChange={(event) => onAuthTokenChange(event.target.value)}
+              spellCheck={false}
+              type="password"
+              value={authToken}
             />
           </div>
         </section>

@@ -1,5 +1,27 @@
-import { app, BrowserWindow } from 'electron';
-import { join } from 'node:path';
+import { app, BrowserWindow, net, protocol } from 'electron';
+import { join, normalize, relative } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+// El renderer empaquetado se sirve como app://bundle en vez de file://: así su Origin no
+// es "null" (que cualquier web puede falsificar) y el backend puede permitirlo explícitamente.
+const APP_SCHEME = 'app';
+const APP_ORIGIN = `${APP_SCHEME}://bundle`;
+const distDirectory = join(__dirname, '../dist');
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
+
+const serveBundle = (): void => {
+  protocol.handle(APP_SCHEME, (request) => {
+    const { pathname } = new URL(request.url);
+    const target = normalize(join(distDirectory, decodeURIComponent(pathname)));
+    // Solo archivos dentro de dist/; cualquier otra ruta cae en index.html.
+    const inside = !relative(distDirectory, target).startsWith('..');
+    const file = inside && pathname !== '/' ? target : join(distDirectory, 'index.html');
+    return net.fetch(pathToFileURL(file).toString());
+  });
+};
 
 const createWindow = (): void => {
   const window = new BrowserWindow({
@@ -19,7 +41,7 @@ const createWindow = (): void => {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event, url) => {
     const developmentUrl = process.env.VITE_DEV_SERVER_URL;
-    const isAllowed = developmentUrl ? url.startsWith(developmentUrl) : url.startsWith('file:');
+    const isAllowed = developmentUrl ? url.startsWith(developmentUrl) : url.startsWith(APP_ORIGIN);
     if (!isAllowed) event.preventDefault();
   });
 
@@ -27,11 +49,12 @@ const createWindow = (): void => {
   if (developmentUrl) {
     void window.loadURL(developmentUrl);
   } else {
-    void window.loadFile(join(__dirname, '../dist/index.html'));
+    void window.loadURL(`${APP_ORIGIN}/index.html`);
   }
 };
 
 void app.whenReady().then(() => {
+  if (!process.env.VITE_DEV_SERVER_URL) serveBundle();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -11,6 +11,14 @@ from langchain.messages import HumanMessage
 from langgraph.types import Command
 
 from api.cors import ALLOWED_ORIGINS, ALLOWED_ORIGIN_REGEX
+from api.security import (
+    WS_APP_SUBPROTOCOL,
+    TurnRateLimiter,
+    is_valid_thread_id,
+    token_matches,
+    websocket_token,
+)
+from config.settings import WS_MAX_MESSAGE_CHARS
 from core.astream import execute_astream_graph
 
 logger = logging.getLogger(__name__)
@@ -39,6 +47,7 @@ class SessionRegistry:
         self._guard = asyncio.Lock()
         self._locks: dict[str, dict] = {}
         self._sockets: dict[str, WebSocket] = {}
+        self.rate_limiter = TurnRateLimiter()
 
     async def replace_socket(self, thread_id: str, websocket: WebSocket) -> WebSocket | None:
         """Registra la conexión nueva y devuelve la anterior para cerrarla."""
@@ -163,7 +172,17 @@ async def _receive_content(websocket: WebSocket, sender: SafeSender) -> str:
             )
             continue
 
-        return content.strip()
+        content = content.strip()
+        if len(content) > WS_MAX_MESSAGE_CHARS:
+            await _send_ws_error(
+                sender,
+                code="message_too_long",
+                content=f"El mensaje supera el máximo de {WS_MAX_MESSAGE_CHARS} caracteres.",
+                retryable=True,
+            )
+            continue
+
+        return content
 
 
 async def _heartbeat(sender: SafeSender) -> None:
@@ -275,6 +294,14 @@ async def _run_websocket_session(websocket: WebSocket, sender: SafeSender, threa
     registry: SessionRegistry = websocket.app.state.session_registry
     while True:
         message = await _receive_content(websocket, sender)
+        if not registry.rate_limiter.allow(thread_id):
+            await _send_ws_error(
+                sender,
+                code="rate_limited",
+                content="Demasiados mensajes seguidos. Espera un momento antes de enviar otro.",
+                retryable=True,
+            )
+            continue
         try:
             async with registry.turn(thread_id, sender):
                 await _process_message(websocket, sender, thread_id, message)
@@ -305,10 +332,17 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
         )
         return
 
-    await websocket.accept()
+    if not token_matches(websocket_token(websocket.scope.get("subprotocols", []))):
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason="unauthorized",
+        )
+        return
+
+    await websocket.accept(subprotocol=WS_APP_SUBPROTOCOL)
     sender = SafeSender(websocket)
 
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", thread_id):
+    if not is_valid_thread_id(thread_id):
         await _send_ws_error(
             sender,
             code="invalid_thread_id",

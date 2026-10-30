@@ -14,7 +14,9 @@ from fastapi.responses import JSONResponse
 from langchain.messages import AIMessage, HumanMessage
 
 from api.cors import configure_cors
+from api.security import TokenAuthMiddleware, validate_chat_id
 from api.ws import SessionRegistry, router as ws_router
+from config import settings
 from config.settings import (
     APP_DATABASE_PATH,
     CHROMA_DIRECTORY,
@@ -108,6 +110,11 @@ class _PdfUploadBodyLimitMiddleware:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Compila los grafos e inicia/recupera el procesamiento asíncrono de PDFs."""
+    if not settings.APP_TOKEN:
+        raise RuntimeError(
+            "Falta APP_TOKEN en el entorno (.env). Genera uno con "
+            "'python -c \"import secrets; print(secrets.token_hex(32))\"' y configúralo también en el cliente."
+        )
     app.state.session_registry = SessionRegistry()
     app.state.document_repository = await DocumentRepository.open(APP_DATABASE_PATH)
     app.state.document_queue = asyncio.Queue()
@@ -166,29 +173,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# CORS envuelve al limitador para que también agregue sus encabezados al 413.
+# CORS envuelve al token y al limitador para que también agregue sus encabezados al 401/413.
 app.add_middleware(
     _PdfUploadBodyLimitMiddleware,
     max_body_bytes=MAX_UPLOAD_REQUEST_BYTES,
 )
+app.add_middleware(TokenAuthMiddleware)
 configure_cors(app)
 
 
 app.include_router(ws_router)
 
 
-def _validate_chat_id(chat_id: str) -> None:
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", chat_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="chat_id_invalido",
-        )
-
-
 @app.get("/chats/{chat_id}/messages")
 async def list_chat_messages_endpoint(chat_id: str):
     """Devuelve el estado checkpointeado para que el cliente se resincronice al reconectar."""
-    _validate_chat_id(chat_id)
+    validate_chat_id(chat_id)
     config = {"configurable": {"thread_id": chat_id}}
 
     context_snapshot = await app.state.graph_context_study.aget_state(config)
@@ -224,7 +224,7 @@ async def list_chat_messages_endpoint(chat_id: str):
 @app.delete("/chats/{chat_id}")
 async def delete_chat_endpoint(chat_id: str):
     """Elimina los checkpoints y los archivos de una sesión."""
-    _validate_chat_id(chat_id)
+    validate_chat_id(chat_id)
 
     # No espera al worker: borrar las filas cancela el documento en curso, que
     # descarta su resultado al no poder guardarlo (ver document_worker).
@@ -240,6 +240,7 @@ async def delete_chat_endpoint(chat_id: str):
         session_manager.session_path = str(Path(DATA_DIRECTORY) / chat_id)
         session_manager.remove_session(chat_id)
         app.state.session_study_graph_instance.remove_session_cache_entry(chat_id)
+        app.state.session_registry.rate_limiter.forget(chat_id)
     except Exception:
         logger.exception("No se pudo eliminar la sesión chat_id=%s", chat_id)
         raise HTTPException(
@@ -253,7 +254,7 @@ async def delete_chat_endpoint(chat_id: str):
 @app.get("/chats/{chat_id}/pdfs")
 async def list_chat_pdfs_endpoint(chat_id: str):
     """Lista los documentos de una sesión junto con su estado de procesamiento."""
-    _validate_chat_id(chat_id)
+    validate_chat_id(chat_id)
 
     documents = await app.state.document_repository.list_for_chat(chat_id)
     return {"chat_id": chat_id, "documents": documents}
@@ -264,7 +265,7 @@ async def upload_endpoint(chat_id: str, file: UploadFile = File(), document_type
     """Guarda metadata y encola el PDF; el procesamiento continúa en segundo plano."""
     pdf_path: Path | None = None
     try:
-        _validate_chat_id(chat_id)
+        validate_chat_id(chat_id)
         
         if file.content_type not in {"application/pdf", "application/x-pdf"}:
             raise HTTPException(

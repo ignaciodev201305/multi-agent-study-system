@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { backendConnections, deleteChat, fetchChatSnapshot } from '../services/backend';
+import { backendConnections, deleteChat, fetchChatSnapshot, setAuthToken as setBackendAuthToken } from '../services/backend';
 import type {
   AppView,
   BackendEvent,
@@ -86,6 +86,7 @@ interface PersistedState {
   activeSessionId: string;
   theme: Theme;
   backendUrl: string;
+  authToken: string;
 }
 
 interface StudyState extends PersistedState {
@@ -100,6 +101,7 @@ interface StudyState extends PersistedState {
   goHome: () => void;
   setTheme: (theme: Theme) => void;
   setBackendUrl: (backendUrl: string) => void;
+  setAuthToken: (authToken: string) => void;
   addDocument: (sessionId: string, document: UploadedDocument) => void;
   sendMessage: (content: string) => void;
   receiveEvent: (sessionId: string, event: BackendEvent) => void;
@@ -121,6 +123,7 @@ export const useStudyStore = create<StudyState>()(
       draftSession: null,
       theme: 'dark',
       backendUrl: DEFAULT_BACKEND_URL,
+      authToken: '',
       connectionStates: {},
       errors: {},
       graphActivities: {},
@@ -172,6 +175,10 @@ export const useStudyStore = create<StudyState>()(
       })),
       setTheme: (theme) => set({ theme }),
       setBackendUrl: (backendUrl) => set({ backendUrl }),
+      setAuthToken: (authToken) => {
+        setBackendAuthToken(authToken);
+        set({ authToken });
+      },
       addDocument: (sessionId, document) => set((state) => ({
         sessions: state.sessions.map((session) => session.id === sessionId
           ? {
@@ -351,6 +358,7 @@ export const useStudyStore = create<StudyState>()(
         activeSessionId: state.activeSessionId,
         theme: state.theme,
         backendUrl: state.backendUrl,
+        authToken: state.authToken,
       }),
       merge: (persisted, current) => {
         const saved = persisted as Partial<PersistedState>;
@@ -358,6 +366,7 @@ export const useStudyStore = create<StudyState>()(
         const activeSessionId = sessions.some((session) => session.id === saved.activeSessionId)
           ? (saved.activeSessionId ?? '')
           : (sessions[0]?.id ?? '');
+        setBackendAuthToken(saved.authToken ?? '');
         return {
           ...current,
           ...saved,

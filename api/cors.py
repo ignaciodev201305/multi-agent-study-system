@@ -4,12 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Orígenes locales usados por el front (Vite, Docker y Electron empaquetado).
-# Los navegadores envían "null" como Origin cuando el renderer carga file://.
+# "null" no se acepta: cualquier web puede generarlo con un <iframe sandbox>. Electron
+# empaquetado sirve el renderer con el esquema propio app://bundle.
 ALLOWED_ORIGINS = (
     "http://127.0.0.1:5173",
     "http://localhost:5173",
     "http://[::1]:5173",
-    "null",
+    "app://bundle",
 )
 
 # Permite cualquier puerto local por si Vite cambia de puerto.

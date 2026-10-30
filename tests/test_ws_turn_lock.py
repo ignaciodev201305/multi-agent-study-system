@@ -14,7 +14,10 @@ from starlette.websockets import WebSocketDisconnect
 from api import ws
 from api.ws import SessionRegistry, format_documents_context
 
+# TestClient muta el dict de headers: cada conexión recibe una copia (dict(ORIGIN)).
 ORIGIN = {"origin": "http://127.0.0.1:5173"}
+TOKEN = "token-de-prueba"
+PROTOCOLS = ["study.v1", f"token.{TOKEN}"]
 
 
 class _FakeContextGraph:
@@ -62,6 +65,9 @@ def _make_client(test, *, delay=0.0, context_ready=True):
     app.state.graph_context_study = _FakeContextGraph(context_ready)
     app.state.graph_session_study = _FakeSessionGraph(delay)
     app.state.document_repository = _FakeRepository()
+    token_patch = patch("config.settings.APP_TOKEN", TOKEN)
+    token_patch.start()
+    test.addCleanup(token_patch.stop)
     # Entrar al cliente comparte un único event loop entre conexiones, como en uvicorn.
     client = TestClient(app)
     client.__enter__()
@@ -81,18 +87,18 @@ def _receive_until(websocket, event_type):
 class WebSocketTurnLockTests(unittest.TestCase):
     def test_new_connection_supersedes_previous(self):
         client, _ = _make_client(self)
-        with client.websocket_connect("/ws/thread", headers=ORIGIN) as first:
-            with client.websocket_connect("/ws/thread", headers=ORIGIN):
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as first:
+            with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS):
                 with self.assertRaises(WebSocketDisconnect) as closed:
                     first.receive_json()
         self.assertEqual(closed.exception.code, ws.WS_CLOSE_SUPERSEDED)
 
     def test_message_during_turn_waits_and_never_runs_in_parallel(self):
         client, graph = _make_client(self, delay=0.5)
-        with client.websocket_connect("/ws/thread", headers=ORIGIN) as first:
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as first:
             first.send_json({"content": "a"})
             time.sleep(0.1)
-            with client.websocket_connect("/ws/thread", headers=ORIGIN) as second:
+            with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as second:
                 second.send_json({"content": "b"})
                 events = _receive_until(second, "agent_response")
 
@@ -105,10 +111,10 @@ class WebSocketTurnLockTests(unittest.TestCase):
 
     def test_connection_does_not_hold_lock_between_turns(self):
         client, _ = _make_client(self)
-        with client.websocket_connect("/ws/thread", headers=ORIGIN) as first:
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as first:
             first.send_json({"content": "a"})
             _receive_until(first, "agent_response")
-            with client.websocket_connect("/ws/thread", headers=ORIGIN) as second:
+            with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as second:
                 second.send_json({"content": "b"})
                 events = _receive_until(second, "agent_response")
         self.assertEqual([event["type"] for event in events], ["agent_response"])
@@ -116,10 +122,10 @@ class WebSocketTurnLockTests(unittest.TestCase):
     def test_wait_timeout_returns_retryable_turn_in_progress(self):
         client, _ = _make_client(self, delay=1.0)
         with patch.object(ws, "TURN_WAIT_TIMEOUT_SECONDS", 0.1):
-            with client.websocket_connect("/ws/thread", headers=ORIGIN) as first:
+            with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as first:
                 first.send_json({"content": "a"})
                 time.sleep(0.1)
-                with client.websocket_connect("/ws/thread", headers=ORIGIN) as second:
+                with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as second:
                     second.send_json({"content": "b"})
                     events = _receive_until(second, "error")
         self.assertEqual(events[-1]["code"], "turn_in_progress")
@@ -128,14 +134,14 @@ class WebSocketTurnLockTests(unittest.TestCase):
     def test_heartbeat_is_sent_while_turn_runs(self):
         client, _ = _make_client(self, delay=0.3)
         with patch.object(ws, "HEARTBEAT_INTERVAL_SECONDS", 0.05):
-            with client.websocket_connect("/ws/thread", headers=ORIGIN) as websocket:
+            with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
                 websocket.send_json({"content": "a"})
                 events = _receive_until(websocket, "agent_response")
         self.assertIn({"type": "status", "content": "working"}, events)
 
     def test_context_interrupt_asks_user(self):
         client, graph = _make_client(self, context_ready=False)
-        with client.websocket_connect("/ws/thread", headers=ORIGIN) as websocket:
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
             websocket.send_json({"content": "quiero estudiar"})
             event = websocket.receive_json()
         self.assertEqual(event, {"type": "human_input_request", "content": "¿Qué nivel tienes?"})
@@ -144,8 +150,48 @@ class WebSocketTurnLockTests(unittest.TestCase):
     def test_rejects_unknown_origin(self):
         client, _ = _make_client(self)
         with self.assertRaises(WebSocketDisconnect):
-            with client.websocket_connect("/ws/thread", headers={"origin": "https://evil.example"}) as websocket:
+            with client.websocket_connect("/ws/thread", headers={"origin": "https://evil.example"}, subprotocols=PROTOCOLS) as websocket:
                 websocket.receive_json()
+
+
+class WebSocketSecurityTests(unittest.TestCase):
+    def test_rejects_missing_or_wrong_token(self):
+        client, _ = _make_client(self)
+        for protocols in ([], ["study.v1"], ["study.v1", "token.otro"]):
+            with self.assertRaises(WebSocketDisconnect):
+                with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=protocols) as websocket:
+                    websocket.receive_json()
+
+    def test_rejects_null_origin(self):
+        client, _ = _make_client(self)
+        with self.assertRaises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/thread", headers={"origin": "null"}, subprotocols=PROTOCOLS) as websocket:
+                websocket.receive_json()
+
+    def test_accepts_app_subprotocol(self):
+        client, _ = _make_client(self)
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            self.assertEqual(websocket.accepted_subprotocol, "study.v1")
+
+    def test_message_too_long_keeps_connection(self):
+        client, graph = _make_client(self)
+        with patch.object(ws, "WS_MAX_MESSAGE_CHARS", 5):
+            with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+                websocket.send_json({"content": "demasiado largo"})
+                self.assertEqual(websocket.receive_json()["code"], "message_too_long")
+                websocket.send_json({"content": "ok"})
+                self.assertEqual(websocket.receive_json()["content"], "respuesta:ok")
+        self.assertEqual(graph.calls, ["ok"])
+
+    def test_rate_limit_per_session(self):
+        client, graph = _make_client(self)
+        client.app.state.session_registry.rate_limiter.max_turns = 2
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            for content in ("a", "b", "c"):
+                websocket.send_json({"content": content})
+            events = [websocket.receive_json() for _ in range(3)]
+        self.assertEqual(events[-1]["code"], "rate_limited")
+        self.assertEqual(graph.calls, ["a", "b"])
 
 
 class DocumentsContextTests(unittest.TestCase):

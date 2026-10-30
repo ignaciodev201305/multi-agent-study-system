@@ -3,8 +3,8 @@ services:
     build: .
     env_file: .env
     ports:
-      # Necesario para la URL por defecto de la interfaz (ws://127.0.0.1:8000).
-      - "8000:8000"
+      # Solo en loopback: la API no queda expuesta a la LAN (ws://127.0.0.1:8000).
+      - "127.0.0.1:8000:8000"
     volumes:
       - data_volume:/app/data
       - models_cache:/home/appuser/.cache
@@ -22,7 +22,7 @@ services:
     build: ./client
     ports:
       # Abrir la interfaz en http://127.0.0.1:5173: es el origen permitido por CORS.
-      - "5173:80"
+      - "127.0.0.1:5173:80"
     depends_on:
       backend:
         condition: service_healthy

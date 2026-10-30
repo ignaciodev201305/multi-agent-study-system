@@ -14,6 +14,7 @@ export default function App(): JSX.Element {
   const draftSession = useStudyStore((state) => state.draftSession);
   const theme = useStudyStore((state) => state.theme);
   const backendUrl = useStudyStore((state) => state.backendUrl);
+  const authToken = useStudyStore((state) => state.authToken);
   const connectionStates = useStudyStore((state) => state.connectionStates);
   const errors = useStudyStore((state) => state.errors);
   const graphActivities = useStudyStore((state) => state.graphActivities[state.activeSessionId] ?? EMPTY_GRAPH_ACTIVITIES);
@@ -23,6 +24,7 @@ export default function App(): JSX.Element {
   const goHome = useStudyStore((state) => state.goHome);
   const setTheme = useStudyStore((state) => state.setTheme);
   const setBackendUrl = useStudyStore((state) => state.setBackendUrl);
+  const setAuthToken = useStudyStore((state) => state.setAuthToken);
   const addDocument = useStudyStore((state) => state.addDocument);
   const sendMessage = useStudyStore((state) => state.sendMessage);
   const clearError = useStudyStore((state) => state.clearError);
@@ -73,11 +75,13 @@ export default function App(): JSX.Element {
         />
       ) : (
         <WelcomeView
+          authToken={authToken}
           backendUrl={backendUrl}
           onCreateSession={createSession}
           onDeleteSession={deleteSession}
           onOpenSession={selectSession}
           onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          onAuthTokenChange={setAuthToken}
           onBackendUrlChange={setBackendUrl}
           sessions={sessions}
           theme={theme}

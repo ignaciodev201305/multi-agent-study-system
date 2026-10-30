@@ -3,6 +3,10 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 CONTEXT_STUDY_MODEL = "google/gemini-3.1-flash-lite"
 CONTEXT_STUDY_TEMPERATURE = 0.0
 
@@ -47,3 +51,9 @@ DOCLING_TIMEOUT_SECONDS = max(10, int(os.environ.get("DOCLING_TIMEOUT_SECONDS", 
 DOCUMENT_SUMMARY_CHAR_BUDGET = max(
     10_000, int(os.environ.get("DOCUMENT_SUMMARY_CHAR_BUDGET", "120000"))
 )
+
+# Token local compartido con el cliente (header Authorization en HTTP y subprotocolo en WS).
+APP_TOKEN = os.environ.get("APP_TOKEN", "").strip()
+# Límites del WebSocket para acotar costo: largo de mensaje y turnos por minuto por sesión.
+WS_MAX_MESSAGE_CHARS = max(1, int(os.environ.get("WS_MAX_MESSAGE_CHARS", "8000")))
+WS_MAX_TURNS_PER_MINUTE = max(1, int(os.environ.get("WS_MAX_TURNS_PER_MINUTE", "20")))

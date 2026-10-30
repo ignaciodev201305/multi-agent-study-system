@@ -41,6 +41,7 @@ USER appuser
 # Puerto HTTP que escucha Uvicorn dentro del contenedor; no publica el puerto del host.
 EXPOSE 8000
 
-# Arranca la API en todas las interfaces del contenedor. Se usa un solo worker porque
-# los grafos y supervisores de sesión mantienen una caché en memoria por proceso.
-CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Arranca la API en todas las interfaces del contenedor (docker-compose solo publica en
+# 127.0.0.1). Un solo worker porque los grafos, supervisores y locks de turno viven en
+# memoria del proceso. --ws-max-size acota cada frame del WebSocket a 64 KiB.
+CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000", "--ws-max-size", "65536"]
