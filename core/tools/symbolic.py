@@ -42,14 +42,15 @@ async def math_tool(
     expression: str,
     variable: str | None = None,
     order: int | None = None,
-    lower: str | None = None,
-    upper: str | None = None,
-    point: str | None = None,
+    lower: str | int | float | None = None,
+    upper: str | int | float | None = None,
+    point: str | int | float | None = None,
     substitutions: str | None = None,
 ) -> str:
     """Cálculo simbólico exacto con SymPy. Úsala para verificar resultados antes de darlos.
 
-    expression usa sintaxis tipo Python: 3*x^2 + sin(x), sqrt(x), exp(-t/2), log(x).
+    expression usa sintaxis tipo Python, no LaTeX: 3*x^2 + sin(theta), sqrt(x), e^(-t/2), log(x).
+    e es la constante de Euler. No admite funciones sin definir como f(x).
     - simplify / expand / factor: reescribe la expresión.
     - diff: derivada respecto de variable (order para derivadas de orden n).
     - integrate: primitiva; con lower y upper, integral definida.

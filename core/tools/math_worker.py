@@ -10,11 +10,18 @@ import re
 import sys
 
 MAX_EXPRESSION_CHARS = 500
+MAX_NAME_CHARS = 20
 ALLOWED_CHARS = re.compile(r"[0-9A-Za-z_+\-*/^().,= ]*")
 ALLOWED_FUNCTIONS = {
     "sin", "cos", "tan", "cot", "sec", "csc", "asin", "acos", "atan", "sinh", "cosh", "tanh",
     "exp", "log", "ln", "sqrt", "Abs", "factorial", "binomial", "floor", "ceiling",
-    "pi", "E", "I", "oo",
+}
+CONSTANTS = {"pi": "pi", "E": "E", "e": "E", "I": "I", "oo": "oo"}
+# Una letra antes de "(" multiplica: x(x+1). f, g y h serían funciones sin definir.
+UNDEFINED_FUNCTIONS = {"f", "g", "h"}
+UNICODE_REPLACEMENTS = {
+    "²": "^2", "³": "^3", "·": "*", "×": "*", "÷": "/", "−": "-", "π": "pi", "∞": "oo",
+    "α": "alpha", "β": "beta", "γ": "gamma", "θ": "theta", "λ": "lambda_", "μ": "mu", "ω": "omega",
 }
 
 
@@ -28,14 +35,24 @@ def _limit_resources() -> None:
 
 
 def _check(expression: str) -> str:
-    expression = expression.strip()
+    expression = str(expression).strip()
+    for symbol, replacement in UNICODE_REPLACEMENTS.items():
+        expression = expression.replace(symbol, replacement)
     if not expression or len(expression) > MAX_EXPRESSION_CHARS:
         raise ValueError("Expresión vacía o demasiado larga.")
+    if "\\" in expression or "{" in expression:
+        raise ValueError("Usa sintaxis tipo Python, no LaTeX: (1)/(2), sqrt(x), x^2.")
     if not ALLOWED_CHARS.fullmatch(expression) or "__" in expression:
         raise ValueError("La expresión contiene caracteres no permitidos.")
-    for name in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression):
-        if len(name) > 3 and name not in ALLOWED_FUNCTIONS:
-            raise ValueError(f"Nombre no permitido: {name}. Usa variables cortas (x, y, t, k1).")
+    if re.search(r"[A-Za-z_]\s*\.", expression):
+        raise ValueError("No se permite el acceso a atributos.")
+    for match in re.finditer(r"[A-Za-z_][A-Za-z0-9_]*", expression):
+        name = match.group()
+        if len(name) > MAX_NAME_CHARS:
+            raise ValueError(f"Nombre demasiado largo: {name}.")
+        is_call = expression[match.end():].lstrip().startswith("(")
+        if is_call and name not in ALLOWED_FUNCTIONS and (len(name) > 1 or name in UNDEFINED_FUNCTIONS):
+            raise ValueError(f"Función no permitida: {name}. Escribe la expresión explícita.")
     return expression
 
 
@@ -43,18 +60,27 @@ def _parse(expression: str):
     import sympy
     from sympy.parsing.sympy_parser import (
         convert_xor,
-        implicit_multiplication_application,
+        function_exponentiation,
+        implicit_application,
+        implicit_multiplication,
         parse_expr,
         standard_transformations,
     )
 
     namespace = {name: getattr(sympy, name) for name in ALLOWED_FUNCTIONS if hasattr(sympy, name)}
     namespace["ln"] = sympy.log
+    namespace.update({name: getattr(sympy, value) for name, value in CONSTANTS.items()})
     global_namespace = {
         name: getattr(sympy, name)
         for name in ("Integer", "Float", "Rational", "Symbol", "Function")
     }
-    transformations = standard_transformations + (convert_xor, implicit_multiplication_application)
+    # Sin split_symbols: "velocity" es una variable, no v*e*l*o*c*i*t*y.
+    transformations = standard_transformations + (
+        convert_xor,
+        implicit_multiplication,
+        implicit_application,
+        function_exponentiation,
+    )
     return parse_expr(
         _check(expression),
         local_dict=namespace,
@@ -128,9 +154,11 @@ def _single_symbol(expression):
 
 
 if __name__ == "__main__":
-    _limit_resources()
     try:
+        _limit_resources()
         response = run(json.loads(sys.stdin.buffer.read().decode("utf-8")))
+    except ModuleNotFoundError as error:
+        response = {"error": f"{error}. Inicia el backend con el Python de .venv o instala requirements.txt."}
     except Exception as error:  # El error vuelve al agente como texto, no como excepción.
         response = {"error": f"{type(error).__name__}: {error}"}
     # Bytes UTF-8 explícitos: la codificación por defecto de stdout depende del sistema.
