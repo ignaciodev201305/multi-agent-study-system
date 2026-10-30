@@ -4,12 +4,8 @@ import logging
 from collections import OrderedDict
 from threading import Lock
 
-import aiosqlite
-
 from langchain.messages import HumanMessage, RemoveMessage, SystemMessage
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import END
 
 from config.settings import (
     SESSION_HISTORY_KEEP_MESSAGES,
@@ -21,7 +17,6 @@ from core.agents.builder import SupervisorBuilder
 from core.chain import ChainBuilder
 from core.llm import build_model
 from core.prompts.session import SUMMARY_PROMPT
-from core.states import SessionState
 from core.tools import TurnContext
 
 logger = logging.getLogger(__name__)
@@ -63,8 +58,8 @@ class SessionStudyGraph:
         with self.supervisors_lock:
             return self.supervisors.pop(thread_id, None) is not None
 
-    def build_graph(self):
-        graph = StateGraph(SessionState)
+    def add_nodes(self, graph):
+        """Añade al grafo padre los nodos del turno; la entrada es summarize_conversation."""
 
         async def summarize_conversation(state):
             """Resume los mensajes antiguos en `summary` y los quita del historial."""
@@ -123,26 +118,12 @@ class SessionStudyGraph:
         graph.add_node("build_supervisor", build_supervisor)
         graph.add_node("chat", chat)
 
-        graph.add_edge(START, "summarize_conversation")
         graph.add_conditional_edges("summarize_conversation", check_supervisor, {
             "chat": "chat",
             "build_supervisor": "build_supervisor"
         })
         graph.add_edge("build_supervisor", "chat")
         graph.add_edge("chat", END)
-
-        self.graph = graph
-
-    async def compile_graph(self, checkpointer=None):
-        self.build_graph()
-
-        if checkpointer is None:
-            serde = JsonPlusSerializer(allowed_msgpack_modules=[("core.schemas", "StudyPlan"), ("core.schemas", "SelectedArchetype")])
-            conn = await aiosqlite.connect("data/session_study.db", check_same_thread=True)
-            checkpointer = AsyncSqliteSaver(conn, serde=serde)
-        return self.graph.compile(
-            checkpointer=checkpointer
-        )
 
 
 def format_documents_context(documents: list[dict]) -> str:

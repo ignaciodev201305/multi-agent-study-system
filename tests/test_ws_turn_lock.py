@@ -21,28 +21,24 @@ TOKEN = "token-de-prueba"
 PROTOCOLS = ["study.v1", f"token.{TOKEN}"]
 
 
-class _FakeContextGraph:
-    def __init__(self, ready=True):
-        self.ready = ready
+class _FakeStudyGraph:
+    """Simula turnos lentos y registra cuántos corren a la vez."""
 
-    async def aget_state(self, config):
-        values = {"study_plan": "plan"} if self.ready else {}
-        return SimpleNamespace(values=values, interrupts=())
-
-    async def astream(self, graph_input, config, stream_mode):
-        yield "values", {"__interrupt__": [SimpleNamespace(value="¿Qué nivel tienes?")]}
-
-
-class _FakeSessionGraph:
-    """Simula un turno lento y registra cuántos turnos corren a la vez."""
-
-    def __init__(self, delay):
+    def __init__(self, delay, context_ready):
         self.delay = delay
+        self.context_ready = context_ready
         self.active = 0
         self.max_active = 0
         self.calls = []
 
-    async def astream(self, graph_input, config, stream_mode):
+    async def aget_state(self, config):
+        values = {"study_plan": "plan"} if self.context_ready else {}
+        return SimpleNamespace(values=values, interrupts=())
+
+    async def astream(self, graph_input, config, stream_mode, subgraphs):
+        if not self.context_ready:
+            yield (), "values", {"__interrupt__": [SimpleNamespace(value="¿Qué nivel tienes?")]}
+            return
         content = graph_input["messages"][-1].content
         self.calls.append(content)
         self.active += 1
@@ -51,7 +47,7 @@ class _FakeSessionGraph:
             await asyncio.sleep(self.delay)
         finally:
             self.active -= 1
-        yield "values", {"messages": [AIMessage(content=f"respuesta:{content}")]}
+        yield (), "values", {"messages": [AIMessage(content=f"respuesta:{content}")]}
 
 
 class _FakeRepository:
@@ -63,8 +59,7 @@ def _make_client(test, *, delay=0.0, context_ready=True):
     app = FastAPI()
     app.include_router(ws.router)
     app.state.session_registry = SessionRegistry()
-    app.state.graph_context_study = _FakeContextGraph(context_ready)
-    app.state.graph_session_study = _FakeSessionGraph(delay)
+    app.state.study_graph = _FakeStudyGraph(delay, context_ready)
     app.state.document_repository = _FakeRepository()
     token_patch = patch("config.settings.APP_TOKEN", TOKEN)
     token_patch.start()
@@ -73,7 +68,7 @@ def _make_client(test, *, delay=0.0, context_ready=True):
     client = TestClient(app)
     client.__enter__()
     test.addCleanup(client.__exit__, None, None, None)
-    return client, app.state.graph_session_study
+    return client, app.state.study_graph
 
 
 def _receive_until(websocket, event_type):

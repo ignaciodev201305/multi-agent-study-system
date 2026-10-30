@@ -1,6 +1,5 @@
 """Estados de los grafos de contextualización y de sesión."""
 
-from operator import add
 from typing import Annotated, List, TypedDict
 
 from langchain_core.messages.base import BaseMessage
@@ -15,15 +14,13 @@ def merge_progress(current: dict | None, updates: dict | None) -> dict:
 
 
 class ContextStudyState(TypedDict):
-    messages: Annotated[List[BaseMessage], add]
+    messages: Annotated[List[BaseMessage], add_messages]
     classified_context: ContextClassification
     study_plan: StudyPlan
     clarification_round: int
-    remaining_rounds: int
 
-class SessionState(TypedDict):
-    messages: Annotated[List[BaseMessage], add_messages]
-    study_plan: StudyPlan
+class StudyState(ContextStudyState):
+    """Estado único de la sesión: contexto y turnos comparten thread y checkpointer."""
     summary: str
     # Documentos ready con su resumen; los carga la API al empezar cada turno.
     documents: list[dict]

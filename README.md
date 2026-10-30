@@ -20,7 +20,7 @@ Los PDFs se procesan en segundo plano: la subida responde con estado `queued` y 
 |---|---|
 | `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats/{id}/messages`, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
 | `config/` | `settings.py`: registro de modelos por rol (`MODEL_ROLES`, con override por entorno), rutas de datos y límites. |
-| `core/` | Grafos y agentes. `graphs/` (contexto y sesión), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress` y `web_search`). `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
+| `core/` | Grafos y agentes. `graphs/` (`study.py`: grafo padre con un checkpointer; `context.py`: subgrafo de contexto; `session.py`: nodos del turno), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress` y `web_search`). `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
 | `documents/` | Procesamiento de PDFs en segundo plano. `pipeline.py`: Docling en un proceso aparte, índice Chroma y resumen por documento. `repository.py`: catálogo SQLite (estado y resumen de cada documento). `worker.py` procesa la cola, `cleanup.py` elimina archivos y vectores huérfanos y `storage.py` borra los directorios de cada sesión. |
 | `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos y caché LRU de supervisores). |
 | `client/` | Cliente Electron, React y Vite. Ver [client/README.md](client/README.md). |
@@ -81,7 +81,7 @@ docker compose down -v   # además borra los volúmenes: sesiones, PDFs, índice
 
 Datos y volúmenes:
 
-- `data_volume` se monta en `/app/data`. Contiene `app.db` (catálogo de PDFs), `sessions/<chat_id>/` (PDFs y base vectorial Chroma de cada sesión) y las bases SQLite de los checkpoints de LangGraph.
+- `data_volume` se monta en `/app/data`. Contiene `app.db` (catálogo de PDFs), `sessions/<chat_id>/` (PDFs y base vectorial Chroma de cada sesión) y `study.db` (checkpoints de LangGraph: un estado por sesión).
 - `models_cache` guarda la caché de modelos de Docling y HuggingFace para no descargarlos en cada arranque.
 - Para ver los datos desde el host, cambia `data_volume` por el bind mount `./data:/app/data`. El directorio debe ser escribible por el UID 10001, que es el usuario del contenedor.
 
@@ -96,7 +96,7 @@ cp .env.example .env
 .venv/bin/uvicorn api.app:app --reload --port 8000
 ```
 
-Ejecútalo desde la raíz: las bases SQLite de los checkpoints usan rutas relativas (`data/...`).
+**Migración:** las sesiones anteriores no se migran. Si vienes de una versión con `context_study.db`, `session_study.db` o `document_processor.db`, limpia `data/` (con Docker, `docker compose down -v`) antes de arrancar.
 
 Cliente: ver [client/README.md](client/README.md).
 

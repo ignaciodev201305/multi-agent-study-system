@@ -2,13 +2,9 @@
 
 import logging
 
-import aiosqlite
-
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain.messages import HumanMessage, SystemMessage
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
@@ -30,7 +26,7 @@ class ContextStudyGraph:
         self.factory_model = build_model("factory")
         self.chain_builder = ChainBuilder()
         self.tools_builder = ToolsBuilder()
-    def build_graph(self):
+    def build_subgraph(self):
         graph = StateGraph(ContextStudyState)
 
         async def context_classifier(state):
@@ -103,16 +99,4 @@ class ContextStudyGraph:
         graph.add_edge("wait_user_response", "context_classifier")
         graph.add_edge("build_study_plan", END)
 
-        self.graph = graph
-
-
-    async def compile_graph(self, checkpointer=None):
-        self.build_graph()
-
-        if checkpointer is None:
-            serde = JsonPlusSerializer(allowed_msgpack_modules=[("core.schemas", "ContextClassification"), ("core.schemas", "StudyPlan"), ("core.schemas", "SelectedArchetype")])
-            conn = await aiosqlite.connect("data/context_study.db", check_same_thread=True)
-            checkpointer = AsyncSqliteSaver(conn, serde=serde)
-        return self.graph.compile(
-            checkpointer=checkpointer
-        )
+        return graph.compile()

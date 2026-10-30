@@ -7,7 +7,7 @@ from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from config.settings import SESSION_HISTORY_KEEP_MESSAGES, SESSION_HISTORY_MAX_MESSAGES
-from core.graphs import SessionStudyGraph
+from core.graphs import StudyGraph
 from core.streaming import token_text
 
 
@@ -34,14 +34,20 @@ class _FakeSupervisor:
 
 class SessionHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        with patch("core.graphs.session.build_model"), patch("core.graphs.session.ChainBuilder"):
-            self.session_graph = SessionStudyGraph()
+        with (
+            patch("core.graphs.session.build_model"),
+            patch("core.graphs.session.ChainBuilder"),
+            patch("core.graphs.context.build_model"),
+            patch("core.graphs.context.ToolsBuilder"),
+        ):
+            self.study_graph = StudyGraph()
+        self.session_graph = self.study_graph.session
         self.chain = _FakeChain()
         self.session_graph.chain_builder.build_chain.return_value = self.chain
         self.supervisor = _FakeSupervisor()
         self.session_graph._get_or_build_supervisor = lambda *_: self.supervisor
         self.session_graph._get_cached_supervisor = lambda *_: self.supervisor
-        self.graph = await self.session_graph.compile_graph(checkpointer=InMemorySaver())
+        self.graph = await self.study_graph.compile_graph(checkpointer=InMemorySaver())
         self.config = {"configurable": {"thread_id": "t"}}
 
     async def run_turns(self, count):
@@ -49,7 +55,7 @@ class SessionHistoryTests(unittest.IsolatedAsyncioTestCase):
             await self.graph.ainvoke(
                 {
                     "messages": [HumanMessage(content=f"m{index}")],
-                    "study_plan": None,
+                    "study_plan": "plan",
                     "documents": [{
                         "document_id": "d1",
                         "document_type": "study_map",

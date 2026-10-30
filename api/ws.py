@@ -201,60 +201,46 @@ async def _run_graph(graph, sender: SafeSender, graph_input, config):
 
 
 async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: str, message: str) -> None:
-    """Ejecuta un turno: contexto (con sus interrupts) o sesión, según el checkpoint."""
+    """Ejecuta un turno del grafo padre; él decide si contextualiza o estudia."""
     state = websocket.app.state
     config = {"configurable": {"thread_id": thread_id}}
-    graph_context_study = state.graph_context_study
+    graph = state.study_graph
 
-    snapshot = await graph_context_study.aget_state(config)
-    study_plan = snapshot.values.get("study_plan")
+    snapshot = await graph.aget_state(config)
+    had_plan = snapshot.values.get("study_plan") is not None
+    # Documentos listos al empezar el turno; los que terminen a mitad de turno entran en el siguiente.
+    graph_input = Command(resume=message) if snapshot.interrupts else {
+        "messages": [HumanMessage(content=message)],
+        "documents": await state.document_repository.list_ready_with_summaries(thread_id),
+    }
 
-    if study_plan is None:
-        graph_input = Command(resume=message) if snapshot.interrupts else {
-            "messages": [HumanMessage(content=message)]
-        }
-        logger.info("context turn start thread_id=%s", thread_id)
-        context_study, interrupt_info = await _run_graph(
-            graph_context_study, sender, graph_input, config
+    logger.info("turn start thread_id=%s", thread_id)
+    result, interrupt_info = await _run_graph(graph, sender, graph_input, config)
+    logger.info("turn end thread_id=%s", thread_id)
+
+    if interrupt_info:
+        await sender.send_json({
+            "type": "human_input_request",
+            "content": interrupt_info[0].value,
+        })
+    elif had_plan:
+        await sender.send_json({
+            "type": "agent_response",
+            "content": result["messages"][-1].content,
+        })
+    elif (result or {}).get("study_plan") is None:
+        await _send_ws_error(
+            sender,
+            code="context_failed",
+            content="No se pudo crear el contexto de estudio. Puedes enviar otro mensaje para intentarlo de nuevo.",
+            retryable=True,
         )
-        logger.info("context turn end thread_id=%s", thread_id)
-
-        if interrupt_info:
-            await sender.send_json({
-                "type": "human_input_request",
-                "content": interrupt_info[0].value,
-            })
-            return
-
-        if (context_study or {}).get("study_plan") is None:
-            await _send_ws_error(
-                sender,
-                code="context_failed",
-                content="No se pudo crear el contexto de estudio. Puedes enviar otro mensaje para intentarlo de nuevo.",
-                retryable=True,
-            )
-            return
-
+    else:
         await sender.send_json({
             "type": "context_processed",
             "content": "Contexto procesado",
-            "title_session": context_study["classified_context"].title_session,
+            "title_session": result["classified_context"].title_session,
         })
-        return
-
-    # Documentos listos al empezar el turno; los que terminen a mitad de turno entran en el siguiente.
-    graph_input = {
-        "messages": [HumanMessage(content=message)],
-        "study_plan": study_plan,
-        "documents": await state.document_repository.list_ready_with_summaries(thread_id),
-    }
-    logger.info("session turn start thread_id=%s", thread_id)
-    session_study, _ = await _run_graph(state.graph_session_study, sender, graph_input, config)
-    logger.info("session turn end thread_id=%s", thread_id)
-    await sender.send_json({
-        "type": "agent_response",
-        "content": session_study["messages"][-1].content,
-    })
 
 
 async def _run_websocket_session(websocket: WebSocket, sender: SafeSender, thread_id: str) -> None:

@@ -41,6 +41,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIRECTORY = BASE_DIR/"data/sessions/"
 os.makedirs(DATA_DIRECTORY, exist_ok=True)
 APP_DATABASE_PATH = BASE_DIR / "data" / "app.db"
+STUDY_DATABASE_PATH = BASE_DIR / "data" / "study.db"
 DOCUMENT_WORKERS = max(1, int(os.environ.get("DOCUMENT_WORKERS", "1")))
 DOCUMENT_MAX_ATTEMPTS = max(1, int(os.environ.get("DOCUMENT_MAX_ATTEMPTS", "3")))
 SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES = max(

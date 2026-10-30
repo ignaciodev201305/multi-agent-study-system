@@ -32,26 +32,21 @@ async def list_chat_messages_endpoint(chat_id: str, request: Request):
     validate_chat_id(chat_id)
     config = {"configurable": {"thread_id": chat_id}}
 
-    context_snapshot = await request.app.state.graph_context_study.aget_state(config)
-    if context_snapshot.values.get("study_plan") is not None:
+    snapshot = await request.app.state.study_graph.aget_state(config)
+    if snapshot.values.get("study_plan") is not None:
         phase = "study"
-    elif context_snapshot.interrupts:
+    elif snapshot.interrupts:
         phase = "clarification"
     else:
         phase = "setup"
-    pending_question = (
-        context_snapshot.interrupts[0].value
-        if phase == "clarification"
-        else None
-    )
+    pending_question = snapshot.interrupts[0].value if phase == "clarification" else None
 
-    session_snapshot = await request.app.state.graph_session_study.aget_state(config)
     messages = [
         {
             "role": "user" if isinstance(message, HumanMessage) else "assistant",
             "content": message.content,
         }
-        for message in session_snapshot.values.get("messages", [])
+        for message in snapshot.values.get("messages", [])
         if isinstance(message, (HumanMessage, AIMessage)) and isinstance(message.content, str)
     ]
     return {
@@ -71,16 +66,12 @@ async def delete_chat_endpoint(chat_id: str, request: Request):
     # descarta su resultado al no poder guardarlo (ver document_worker).
     try:
         await request.app.state.document_repository.delete_chat(chat_id)
-        for graph in (
-            request.app.state.graph_context_study,
-            request.app.state.graph_session_study,
-        ):
-            await graph.checkpointer.adelete_thread(chat_id)
+        await request.app.state.study_graph.checkpointer.adelete_thread(chat_id)
 
         session_manager = SessionManager()
         session_manager.session_path = str(Path(DATA_DIRECTORY) / chat_id)
         session_manager.remove_session(chat_id)
-        request.app.state.session_study_graph_instance.remove_session_cache_entry(chat_id)
+        request.app.state.study_graph_instance.session.remove_session_cache_entry(chat_id)
         forget_vector_store(chat_id)
         request.app.state.session_registry.rate_limiter.forget(chat_id)
     except Exception:

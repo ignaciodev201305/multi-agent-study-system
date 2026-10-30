@@ -21,7 +21,10 @@ async def execute_astream_graph(graph, websocket, graph_input, config):
     """Recorre el stream del grafo, reenvía tokens y devuelve el último estado e interrupt."""
     state = None
     interrupt_info = None
-    async for mode, chunk in graph.astream(graph_input, config, stream_mode=["messages", "values"]):
+    # subgraphs=True: sin esto se pierden los tokens del contexto, del supervisor y sus subagentes.
+    async for namespace, mode, chunk in graph.astream(
+        graph_input, config, stream_mode=["messages", "values"], subgraphs=True
+    ):
         if mode == "messages":
             token, metadata = chunk
             node = metadata.get("langgraph_node")
@@ -34,7 +37,8 @@ async def execute_astream_graph(graph, websocket, graph_input, config):
                     "step": metadata.get("langgraph_step")
                 })
 
-        if mode == "values":
+        # Solo el estado del grafo padre; los valores de los subgrafos son internos.
+        if mode == "values" and not namespace:
             state = chunk
             interrupt_info = chunk.get("__interrupt__")
 
