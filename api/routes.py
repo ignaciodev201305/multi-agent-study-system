@@ -2,11 +2,12 @@
 
 import hashlib
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 from langchain.messages import AIMessage, HumanMessage
 
@@ -59,7 +60,30 @@ async def list_chat_messages_endpoint(chat_id: str, request: Request):
         "turn_active": turn_active,
         "messages": messages,
         "board": snapshot.values.get("board") or Board().model_dump(),
+        "progress": await request.app.state.progress_repository.list_for_chat(chat_id),
     }
+
+
+@router.get("/chats/{chat_id}/progress")
+async def get_chat_progress_endpoint(chat_id: str, request: Request):
+    """Devuelve el temario y, por tema evaluado, su estado, repaso y últimas revisiones."""
+    validate_chat_id(chat_id)
+    config = {"configurable": {"thread_id": chat_id}}
+
+    snapshot = await request.app.state.study_graph.aget_state(config)
+    study_plan = snapshot.values.get("study_plan")
+    return {
+        "chat_id": chat_id,
+        "syllabus": study_plan.syllabus if study_plan else [],
+        "topics": await request.app.state.progress_repository.list_for_chat(chat_id),
+    }
+
+
+@router.get("/reviews/due")
+async def list_due_reviews_endpoint(request: Request, limit: int = Query(default=20, ge=1, le=100)):
+    """Lista los repasos vencidos de todas las sesiones."""
+    reviews = await request.app.state.progress_repository.list_due(datetime.now(timezone.utc), limit)
+    return {"reviews": reviews}
 
 
 @router.delete("/chats/{chat_id}")
@@ -70,6 +94,7 @@ async def delete_chat_endpoint(chat_id: str, request: Request):
     # Borrar las filas cancela el documento en curso sin esperar al worker.
     try:
         await request.app.state.document_repository.delete_chat(chat_id)
+        await request.app.state.progress_repository.delete_chat(chat_id)
         await request.app.state.study_graph.checkpointer.adelete_thread(chat_id)
 
         session_manager = SessionManager()

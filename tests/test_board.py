@@ -635,8 +635,10 @@ class BoardStudyGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.stored_board(), before)
 
     async def test_snapshot_exposes_board(self):
+        progress_repository = SimpleNamespace(list_for_chat=AsyncMock(return_value=[]))
         state = SimpleNamespace(
             study_graph=self.graph,
+            progress_repository=progress_repository,
             session_registry=SimpleNamespace(is_turn_active=lambda chat_id: False),
         )
         request = SimpleNamespace(app=SimpleNamespace(state=state))
