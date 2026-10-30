@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from core.board import Board
+
 
 @dataclass
 class TurnContext:
@@ -12,3 +14,7 @@ class TurnContext:
     documents: list[dict] = field(default_factory=list)
     # Actualizaciones de record_progress durante el turno.
     progress_updates: dict[str, dict] = field(default_factory=dict)
+    # Copia de trabajo del turno.
+    board: Board = field(default_factory=Board)
+    # Quién firma los bloques que se agregan.
+    author: str = "profesor_principal"

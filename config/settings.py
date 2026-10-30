@@ -75,3 +75,9 @@ WS_MAX_TURNS_PER_MINUTE = max(1, int(os.environ.get("WS_MAX_TURNS_PER_MINUTE", "
 MATH_TIMEOUT_SECONDS = max(1, int(os.environ.get("MATH_TIMEOUT_SECONDS", "8")))
 # Pasos máximos del supervisor por turno.
 SUPERVISOR_RECURSION_LIMIT = max(5, int(os.environ.get("SUPERVISOR_RECURSION_LIMIT", "40")))
+
+# Límites de la pizarra de cada sesión.
+BOARD_MAX_BLOCKS = max(1, int(os.environ.get("BOARD_MAX_BLOCKS", "60")))
+BOARD_MAX_BLOCK_CHARS = max(1, int(os.environ.get("BOARD_MAX_BLOCK_CHARS", "8000")))
+BOARD_MAX_OPS_PER_TURN = max(1, int(os.environ.get("BOARD_MAX_OPS_PER_TURN", "8")))
+BOARD_MAX_PLOT_FUNCTIONS = max(1, int(os.environ.get("BOARD_MAX_PLOT_FUNCTIONS", "4")))

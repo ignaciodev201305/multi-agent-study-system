@@ -1,5 +1,6 @@
 """Registro de tools: los arquetipos y el supervisor piden sus tools por nombre."""
 
+from core.tools.board import board_add, board_edit, get_board
 from core.tools.context import TurnContext
 from core.tools.documents import get_study_material, search_documents
 from core.tools.progress import record_progress
@@ -11,6 +12,9 @@ _STATIC_TOOLS = {
     "search_documents": search_documents,
     "get_study_material": get_study_material,
     "record_progress": record_progress,
+    "board_add": board_add,
+    "board_edit": board_edit,
+    "get_board": get_board,
 }
 
 

@@ -1,17 +1,28 @@
 """Construcción del supervisor de una sesión: los subagentes se le exponen como tools."""
 
+from dataclasses import replace
+
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage
 from langchain.tools import ToolRuntime, tool
 
 from core.agents.catalog import ARCHETYPES, Archetype, archetype_prompt
+from core.board import board_inventory
 from core.llm import build_model
 from core.prompts.session import DOCUMENT_TOOL_RULES, MATH_FORMAT_RULE, SUPERVISOR_PROMPT
 from core.schemas import StudyPlan
 from core.streaming import token_text
 from core.tools import TurnContext, build_tools
 
-SUPERVISOR_TOOLS = ("search_documents", "get_study_material", "record_progress")
+SUPERVISOR_TOOLS = (
+    "search_documents",
+    "get_study_material",
+    "record_progress",
+    "board_add",
+    "board_edit",
+    "get_board",
+)
+ADDED_BLOCKS_NOTE = "Nota para el profesor (no la muestres al alumno): el especialista ya agregó a la pizarra:"
 
 
 def _subagent_tool(archetype: Archetype, focus: str):
@@ -26,11 +37,18 @@ def _subagent_tool(archetype: Archetype, focus: str):
     )
 
     async def consult(request: str, runtime: ToolRuntime[TurnContext]) -> str:
+        board = runtime.context.board
+        known_ids = {block["id"] for block in board.blocks}
         result = await subagent.ainvoke(
             {"messages": [HumanMessage(content=request)]},
-            context=runtime.context,
+            context=replace(runtime.context, author=archetype.name),
         )
-        return token_text(result["messages"][-1].content)
+        answer = token_text(result["messages"][-1].content)
+        added = [block for block in board.blocks if block["id"] not in known_ids]
+        if not added:
+            return answer
+        # El supervisor no ve las tools del especialista: sin esto repetiría sus bloques.
+        return f"{answer}\n\n{ADDED_BLOCKS_NOTE}\n{board_inventory(added)}"
 
     consult.__doc__ = (
         f"{archetype.description} Foco: {focus}\n"

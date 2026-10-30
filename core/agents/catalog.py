@@ -36,6 +36,11 @@ TECHNIQUES = {
     ),
 }
 
+BOARD_RULE = (
+    "PIZARRA: usa board_add solo para lo que el alumno consultará después (fórmulas, pasos, "
+    "tablas y gráficos). No dupliques tu respuesta ni escribas mensajes conversacionales en ella."
+)
+
 
 @dataclass(frozen=True)
 class Archetype:
@@ -62,7 +67,7 @@ ARCHETYPES = {
                 "al nivel del alumno, anticipas los errores frecuentes del tema y compruebas la "
                 "comprensión antes de avanzar."
             ),
-            tools=("math", "search_documents", "get_study_material"),
+            tools=("math", "search_documents", "get_study_material", "board_add"),
             tier="light",
             temperature=0.3,
             techniques=("paso_a_paso", "reexplicar"),
@@ -76,7 +81,7 @@ ARCHETYPES = {
                 "y corriges su razonamiento señalando el paso exacto donde se equivoca. Verifica "
                 "siempre los resultados con la tool math antes de darlos por buenos."
             ),
-            tools=("math", "get_study_material", "search_documents"),
+            tools=("math", "get_study_material", "search_documents", "board_add"),
             tier="heavy",
             temperature=0.2,
             techniques=("socratico", "reexplicar"),
@@ -89,7 +94,7 @@ ARCHETYPES = {
                 "objetivo del alumno, corriges con criterio explícito y resumes qué temas domina y "
                 "en cuáles tiene dificultad."
             ),
-            tools=("math", "get_study_material"),
+            tools=("math", "get_study_material", "board_add"),
             tier="light",
             temperature=0.2,
             techniques=("simulacro", "repeticion_espaciada"),
@@ -136,10 +141,12 @@ def catalog_for_factory() -> str:
 def archetype_prompt(archetype: Archetype, focus: str) -> str:
     """Prompt completo del subagente: base + técnicas + foco de la sesión."""
     techniques = "\n".join(f"- {TECHNIQUES[name]}" for name in archetype.techniques)
+    board_rule = f"{BOARD_RULE}\n\n" if "board_add" in archetype.tools else ""
     return (
         f"{archetype.prompt}\n\n"
         f"TÉCNICAS:\n{techniques}\n\n"
         f"FOCO EN ESTA SESIÓN:\n{focus}\n\n"
+        f"{board_rule}"
         "Te consulta el profesor principal: responde a su pedido con la explicación o el "
         "ejercicio listo para mostrar al alumno, en segunda persona dirigida al alumno."
     )
