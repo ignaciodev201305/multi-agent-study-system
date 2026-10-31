@@ -15,6 +15,7 @@ import type {
   StudySession,
   Theme,
   UploadedDocument,
+  UsageTotals,
 } from '../types';
 
 const DEFAULT_BACKEND_URL = 'ws://127.0.0.1:8000';
@@ -134,6 +135,7 @@ interface StudyState extends PersistedState {
   graphActivities: Record<string, GraphActivity[] | undefined>;
   // La fuente de verdad es el servidor: no se guarda en el navegador.
   boards: Record<string, Board | undefined>;
+  usage: Record<string, UsageTotals | undefined>;
   composerDraft: ComposerDraft | null;
   setSidePanelOpen: (open: boolean) => void;
   setSidePanelTab: (tab: SidePanelTab) => void;
@@ -177,6 +179,7 @@ export const useStudyStore = create<StudyState>()(
       errors: {},
       graphActivities: {},
       boards: {},
+      usage: {},
       composerDraft: null,
       setSidePanelOpen: (sidePanelOpen) => set({ sidePanelOpen }),
       setSidePanelTab: (sidePanelTab) => set({ sidePanelTab }),
@@ -217,11 +220,13 @@ export const useStudyStore = create<StudyState>()(
           const errors = { ...state.errors };
           const graphActivities = { ...state.graphActivities };
           const boards = { ...state.boards };
+          const usage = { ...state.usage };
           const pythonCode = { ...state.pythonCode };
           delete connectionStates[sessionId];
           delete errors[sessionId];
           delete graphActivities[sessionId];
           delete boards[sessionId];
+          delete usage[sessionId];
           delete pythonCode[sessionId];
 
           return {
@@ -233,6 +238,7 @@ export const useStudyStore = create<StudyState>()(
             errors,
             graphActivities,
             boards,
+            usage,
             pythonCode,
           };
         });
@@ -350,6 +356,12 @@ export const useStudyStore = create<StudyState>()(
           return;
         }
 
+        if (event.type === 'usage') {
+          const { type: _type, content: _content, ...totals } = event;
+          set((state) => ({ usage: { ...state.usage, [sessionId]: totals } }));
+          return;
+        }
+
         set((state) => {
           const session = state.sessions.find((candidate) => candidate.id === sessionId);
           if (!session) return state;
@@ -421,6 +433,8 @@ export const useStudyStore = create<StudyState>()(
             && local !== undefined
             && snapshot.board !== undefined
             && snapshot.board.revision < local.revision;
+          // Los tokens solo crecen: un total menor es una lectura anterior al último evento.
+          const usageIsBehind = (snapshot.usage?.total_tokens ?? 0) < (state.usage[sessionId]?.total_tokens ?? 0);
           return {
             sessions: state.sessions.map((session) => session.id === sessionId
               ? mergeSnapshot(session, snapshot)
@@ -428,6 +442,9 @@ export const useStudyStore = create<StudyState>()(
             boards: snapshot.board && !isBehind
               ? { ...state.boards, [sessionId]: snapshot.board }
               : state.boards,
+            usage: snapshot.usage && !usageIsBehind
+              ? { ...state.usage, [sessionId]: snapshot.usage }
+              : state.usage,
           };
         });
 
@@ -500,6 +517,7 @@ export const useStudyStore = create<StudyState>()(
           errors: {},
           graphActivities: {},
           boards: {},
+          usage: {},
         };
       },
     },

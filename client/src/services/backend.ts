@@ -12,7 +12,9 @@ import type {
   ModelInfo,
   ModelRole,
   ResolvedModels,
+  SessionUsage,
   ThinkingMetadata,
+  UsageTotals,
 } from '../types';
 
 export type { DocumentType };
@@ -190,7 +192,24 @@ export const fetchChatSnapshot = async (
     throw new Error('No se pudo consultar el historial de la sesión.');
   }
   const snapshot = payload as ChatSnapshot;
-  return { ...snapshot, board: parseBoard(snapshot.board) };
+  return { ...snapshot, board: parseBoard(snapshot.board), usage: parseUsageTotals(snapshot.usage) };
+};
+
+export const fetchChatUsage = async (baseUrl: string, sessionId: string): Promise<SessionUsage> => {
+  let response: Response;
+  try {
+    response = await fetch(
+      httpUrl(baseUrl, `/chats/${encodeURIComponent(sessionId)}/usage`),
+      { cache: 'no-store', headers: authHeaders() },
+    );
+  } catch {
+    throw new Error('No se pudo consultar el uso de la sesión.');
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok || !parseUsageTotals(payload) || !Array.isArray((payload as SessionUsage).by_model)) {
+    throw new Error('No se pudo consultar el uso de la sesión.');
+  }
+  return payload as SessionUsage;
 };
 
 export const fetchChatProgress = async (baseUrl: string, sessionId: string): Promise<ChatProgress> => {
@@ -331,6 +350,32 @@ const parseBoardPatch = (value: object, content: string): BoardPatch | null => {
   return null;
 };
 
+const isNumberOrNull = (value: unknown): value is number | null => typeof value === 'number' || value === null;
+
+const parseUsageTotals = (value: unknown): UsageTotals | undefined => {
+  if (!isRecord(value)) return undefined;
+  const {
+    context_used: contextUsed,
+    context_limit: contextLimit,
+    total_tokens: totalTokens,
+    cost_usd: costUsd,
+    cost_estimated: costEstimated,
+    cost_unknown: costUnknown,
+  } = value;
+  if (
+    typeof contextUsed !== 'number' || !isNumberOrNull(contextLimit) || typeof totalTokens !== 'number'
+    || !isNumberOrNull(costUsd) || typeof costEstimated !== 'boolean' || typeof costUnknown !== 'boolean'
+  ) return undefined;
+  return {
+    context_used: contextUsed,
+    context_limit: contextLimit,
+    total_tokens: totalTokens,
+    cost_usd: costUsd,
+    cost_estimated: costEstimated,
+    cost_unknown: costUnknown,
+  };
+};
+
 const parseThinkingMetadata = (value: unknown): ThinkingMetadata | undefined => {
   if (typeof value === 'string') {
     const nodeMatch = value.match(/(?:langgraph_node|node)['"]?\s*:\s*['"]([^'"]+)['"]/);
@@ -397,6 +442,10 @@ const parseBackendEvent = (value: unknown): BackendEvent | null => {
   if (eventType === 'agent_response') return { type: 'agent_response', content };
   if (eventType === 'status') return { type: 'status', content };
   if (eventType === 'board_patch') return parseBoardPatch(value, content);
+  if (eventType === 'usage') {
+    const totals = parseUsageTotals(value);
+    return totals ? { type: 'usage', content, ...totals } : null;
+  }
 
   return null;
 };
@@ -495,8 +544,8 @@ export class BackendConnection {
       return;
     }
 
-    // Este evento llega a mitad de turno y no lo termina.
-    if (event.type === 'board_patch') {
+    // Estos eventos llegan a mitad de turno y no lo terminan.
+    if (event.type === 'board_patch' || event.type === 'usage') {
       this.restartTimeout();
     } else {
       this.clearTimeout();

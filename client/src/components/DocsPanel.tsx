@@ -9,6 +9,8 @@ interface DocsPanelProps {
   documents: UploadedDocument[];
   locked?: boolean;
   onUploaded: (document: UploadedDocument) => void;
+  // Procesar un documento gasta aunque falle.
+  onProcessed: () => void;
 }
 
 const typeLabel: Record<DocumentType, string> = {
@@ -25,7 +27,7 @@ const processingStatusText: Record<DocumentProcessingStatus, string> = {
   failed: 'Falló el procesamiento',
 };
 
-export function DocsPanel({ sessionId, backendUrl, documents, locked = false, onUploaded }: DocsPanelProps): JSX.Element {
+export function DocsPanel({ sessionId, backendUrl, documents, locked = false, onUploaded, onProcessed }: DocsPanelProps): JSX.Element {
   const fileInput = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [documentType, setDocumentType] = useState<DocumentType>('rag');
@@ -85,6 +87,7 @@ export function DocsPanel({ sessionId, backendUrl, documents, locked = false, on
     } finally {
       setUploading(false);
       setUploadStatus(null);
+      onProcessed();
     }
   };
 

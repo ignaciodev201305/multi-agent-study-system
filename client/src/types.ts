@@ -157,8 +157,42 @@ export interface DueReview {
   due_at: string;
 }
 
+export interface UsageTotals {
+  context_used: number;
+  // Nulo si no se conoce la ventana de contexto del modelo.
+  context_limit: number | null;
+  total_tokens: number;
+  // Nulo si ninguna llamada tiene costo conocido.
+  cost_usd: number | null;
+  cost_estimated: boolean;
+  cost_unknown: boolean;
+}
+
+export interface ModelUsage {
+  role: string;
+  model: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
+  cost_usd: number | null;
+  cost_estimated: boolean;
+  cost_unknown: boolean;
+}
+
+export interface SessionUsage extends UsageTotals {
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
+  last_turn_cost_usd: number | null;
+  by_model: ModelUsage[];
+}
+
 export type BackendEvent =
   | BoardPatch
+  | ({ type: 'usage'; content: string } & UsageTotals)
   | { type: 'thinking'; content: string; metadata?: ThinkingMetadata }
   | { type: 'human_input_request'; content: string }
   | { type: 'context_processed'; content: string; title_session?: string }
@@ -178,4 +212,5 @@ export interface ChatSnapshot {
   turn_active?: boolean;
   messages: ServerChatMessage[];
   board?: Board;
+  usage?: UsageTotals;
 }

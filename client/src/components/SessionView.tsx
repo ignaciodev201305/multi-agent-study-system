@@ -4,6 +4,8 @@ import { Conversation } from './Conversation';
 import { DocsPanel } from './DocsPanel';
 import { ModelSettingsPanel } from './ModelSettingsPanel';
 import { StudySidePanel } from './StudySidePanel';
+import { UsageIndicator } from './UsageIndicator';
+import { UsagePanel } from './UsagePanel';
 import type {
   Board,
   ConnectionStatus,
@@ -13,6 +15,7 @@ import type {
   StudySession,
   Theme,
   UploadedDocument,
+  UsageTotals,
 } from '../types';
 import styles from '../App.module.css';
 
@@ -25,6 +28,7 @@ interface SessionViewProps {
   graphActivities: GraphActivity[];
   theme: Theme;
   board: Board;
+  usage?: UsageTotals;
   sidePanelOpen: boolean;
   sidePanelTab: SidePanelTab;
   pythonCode: string;
@@ -34,6 +38,7 @@ interface SessionViewProps {
   onSend: (content: string) => void;
   onDismissError: () => void;
   onUploaded: (document: UploadedDocument) => void;
+  onDocumentProcessed: () => void;
   onSidePanelOpenChange: (open: boolean) => void;
   onSidePanelTabChange: (tab: SidePanelTab) => void;
   onPythonCodeChange: (code: string) => void;
@@ -57,6 +62,7 @@ export function SessionView({
   graphActivities,
   theme,
   board,
+  usage,
   sidePanelOpen,
   sidePanelTab,
   pythonCode,
@@ -66,6 +72,7 @@ export function SessionView({
   onSend,
   onDismissError,
   onUploaded,
+  onDocumentProcessed,
   onSidePanelOpenChange,
   onSidePanelTabChange,
   onPythonCodeChange,
@@ -74,6 +81,7 @@ export function SessionView({
   onComposerDraftApplied,
 }: SessionViewProps): JSX.Element {
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
 
   return (
     <div className={styles.appShell}>
@@ -81,6 +89,7 @@ export function SessionView({
         backendUrl={backendUrl}
         documents={session.documents}
         locked={!session.messages.some((message) => message.role === 'user')}
+        onProcessed={onDocumentProcessed}
         onUploaded={onUploaded}
         sessionId={session.id}
       />
@@ -98,6 +107,7 @@ export function SessionView({
             </div>
           </div>
           <div className={styles.topbarActions}>
+            <UsageIndicator onOpen={() => setUsageOpen(true)} usage={usage} />
             <button className={styles.themeButton} onClick={() => setModelsOpen(true)} type="button">
               Modelos
             </button>
@@ -148,6 +158,9 @@ export function SessionView({
           tab={sidePanelTab}
           title={session.title}
         />
+      )}
+      {usageOpen && (
+        <UsagePanel backendUrl={backendUrl} onClose={() => setUsageOpen(false)} sessionId={session.id} usage={usage} />
       )}
       {modelsOpen && (
         <ModelSettingsPanel backendUrl={backendUrl} onClose={() => setModelsOpen(false)} sessionId={session.id} />

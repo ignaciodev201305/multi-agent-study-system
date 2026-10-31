@@ -20,6 +20,7 @@ export default function App(): JSX.Element {
   const errors = useStudyStore((state) => state.errors);
   const graphActivities = useStudyStore((state) => state.graphActivities[state.activeSessionId] ?? EMPTY_GRAPH_ACTIVITIES);
   const board = useStudyStore((state) => state.boards[state.activeSessionId] ?? EMPTY_BOARD);
+  const usage = useStudyStore((state) => state.usage[state.activeSessionId]);
   const sidePanelOpen = useStudyStore((state) => state.sidePanelOpen);
   const sidePanelTab = useStudyStore((state) => state.sidePanelTab);
   const setSidePanelOpen = useStudyStore((state) => state.setSidePanelOpen);
@@ -40,6 +41,7 @@ export default function App(): JSX.Element {
   const addDocument = useStudyStore((state) => state.addDocument);
   const sendMessage = useStudyStore((state) => state.sendMessage);
   const clearError = useStudyStore((state) => state.clearError);
+  const resyncSession = useStudyStore((state) => state.resyncSession);
   const activeSession = sessions.find((session) => session.id === activeSessionId)
     ?? (draftSession && draftSession.id === activeSessionId ? draftSession : undefined);
   const isSessionView = view === 'session' && Boolean(activeSession);
@@ -81,6 +83,7 @@ export default function App(): JSX.Element {
           onBack={goHome}
           onComposerDraftApplied={clearComposerDraft}
           onDismissError={() => clearError(activeSession.id)}
+          onDocumentProcessed={() => void resyncSession(activeSession.id)}
           onOpenInPython={(code) => openInPython(activeSession.id, code)}
           onPythonCodeChange={(code) => setPythonCode(activeSession.id, code)}
           onSend={sendMessage}
@@ -95,6 +98,7 @@ export default function App(): JSX.Element {
           sidePanelTab={sidePanelTab}
           status={connectionStates[activeSession.id] ?? 'idle'}
           theme={theme}
+          usage={usage}
         />
       ) : (
         <WelcomeView
