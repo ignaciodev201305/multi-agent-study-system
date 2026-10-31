@@ -108,6 +108,7 @@ export function SessionView({
           </div>
         </header>
         <Conversation
+          key={session.id}
           error={error}
           graphActivities={graphActivities}
           isThinking={isBusy}

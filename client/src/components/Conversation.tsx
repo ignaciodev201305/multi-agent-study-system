@@ -1,7 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, GraphActivity, StudyPhase } from '../types';
 import { MarkdownMessage } from './MarkdownMessage';
 import styles from '../App.module.css';
+
+// Abrir una sesión cuesta unos 13 ms por mensaje: se renderizan solo los últimos.
+const VISIBLE_MESSAGES_STEP = 20;
 
 const activityStatusText: Record<GraphActivity['status'], string> = {
   streaming: 'En curso',
@@ -35,6 +38,8 @@ export function Conversation({
 }: ConversationProps): JSX.Element {
   const scrollContainer = useRef<HTMLElement>(null);
   const latestActivity = graphActivities[graphActivities.length - 1];
+  const [visibleCount, setVisibleCount] = useState(VISIBLE_MESSAGES_STEP);
+  const visibleMessages = messages.slice(-visibleCount);
 
   useEffect(() => {
     const element = scrollContainer.current;
@@ -63,7 +68,16 @@ export function Conversation({
         </section>
       ) : (
         <div className={styles.messageColumn} aria-label={`Conversación: ${title}`}>
-          {messages.map((message) => (
+          {messages.length > visibleCount && (
+            <button
+              className={styles.loadEarlier}
+              onClick={() => setVisibleCount((count) => count + VISIBLE_MESSAGES_STEP)}
+              type="button"
+            >
+              Ver anteriores
+            </button>
+          )}
+          {visibleMessages.map((message) => (
             <article
               className={`${styles.message} ${message.role === 'user' ? styles.messageUser : message.role === 'assistant' ? styles.messageAssistant : styles.messageSystem}`}
               key={message.id}

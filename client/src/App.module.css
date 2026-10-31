@@ -283,6 +283,8 @@
 .markdownContent th, .markdownContent td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; }
 .markdownContent th { background: var(--elevated); }
 .systemMessage { width: fit-content; margin: 8px auto 22px; color: var(--muted); font-size: 11px; }
+.loadEarlier { display: block; height: 30px; margin: 0 auto 18px; border: 1px solid var(--border); border-radius: 6px; padding: 0 12px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
+.loadEarlier:hover { border-color: var(--border-strong); color: var(--text); }
 .thinkingIndicator { display: flex; align-items: center; gap: 9px; margin: 10px 0; color: var(--muted); font-size: 11px; }
 .thinkingDots { display: inline-flex; gap: 3px; }
 .thinkingDots i { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); animation: pulse 1s ease-in-out infinite; }
