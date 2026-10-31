@@ -68,6 +68,24 @@ Desde la interfaz se elige el modelo de cada rol entre los del catálogo de Open
 
 El `PUT` recibe `{"role": "...", "model": "..."}`, valida contra el catálogo y con `model: null` quita el ajuste.
 
+### Uso de contexto, tokens y costo
+
+La barra superior de cada sesión muestra el contexto usado, el límite del modelo, el porcentaje y el costo, por ejemplo `24,3k / 200k · 12 % · $0,0421`. Al hacer clic se abre el detalle por rol y modelo. Los datos se actualizan tras cada llamada al modelo y se guardan en `app.db`.
+
+- **Contexto usado:** entrada más salida de la última llamada del supervisor. Los subagentes no cuentan, porque cada uno trabaja con su propio contexto.
+- **Límite de contexto:** el `context_length` del modelo de esa llamada en el catálogo. Si se desconoce, solo se muestran los tokens, sin porcentaje.
+- **Costo de sesión:** suma de todas las llamadas, incluidos clasificador, planificador, resúmenes, subagentes y procesamiento de documentos. Los turnos y documentos fallidos también cuentan, porque ese gasto ocurrió.
+- **Costo estimado (`≈`):** si OpenRouter no informa el costo, se calcula con los precios del catálogo. La estimación no descuenta la caché, así que puede quedar alta.
+- **Costo desconocido (`$?`):** sin precio conocido no se asume cero. Si solo falta una parte, se muestra lo conocido seguido de `+ $?`.
+- **No incluye** embeddings ni búsquedas web.
+- **No es retroactivo:** las sesiones anteriores a esta función empiezan en cero y muestran `Sin uso registrado`.
+
+| Endpoint | Función |
+| --- | --- |
+| `GET /chats/{id}/usage` | Totales, detalle por rol y modelo, costo del último turno y contexto. |
+
+`GET /chats/{id}/messages` incluye el mismo resumen en `usage` para recuperarlo al reconectar, y el WebSocket envía un evento `usage` tras cada llamada. `DELETE /chats/{id}` borra también el uso.
+
 ## Componentes
 
 - **Backend** (`api/`, `core/`, `documents/`, `config/`): FastAPI y LangGraph sobre Python 3.14. Usa OpenRouter para los modelos, Tavily para la búsqueda web, Chroma para los vectores y SQLite para el catálogo de PDFs, el progreso del alumno y los checkpoints de los grafos.
@@ -77,11 +95,11 @@ El `PUT` recibe `{"role": "...", "model": "..."}`, valida contra el catálogo y 
 
 | Ruta | Contenido |
 |---|---|
-| `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats/{id}/messages`, `GET /chats/{id}/progress`, `GET /reviews/due`, los endpoints de modelos, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
+| `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats/{id}/messages`, `GET /chats/{id}/progress`, `GET /reviews/due`, `GET /chats/{id}/usage`, los endpoints de modelos, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
 | `config/` | `settings.py`: registro de modelos por rol (`MODEL_ROLES`, con override por entorno), rutas de datos y límites. |
-| `core/` | Grafos y agentes. `graphs/` (`study.py`: grafo padre con un checkpointer; `context.py`: subgrafo de contexto; `session.py`: nodos del turno), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `study/` (`scheduler.py`: calendario Leitner; `repository.py`: progreso e historial en SQLite), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress`, `web_search` y las tools de pizarra). `board.py` define los bloques y las operaciones de la pizarra, `model_catalog.py` consulta OpenRouter, `model_settings.py` guarda las preferencias y resuelve el modelo de cada rol, `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
+| `core/` | Grafos y agentes. `graphs/` (`study.py`: grafo padre con un checkpointer; `context.py`: subgrafo de contexto; `session.py`: nodos del turno), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `study/` (`scheduler.py`: calendario Leitner; `repository.py`: progreso e historial en SQLite), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress`, `web_search` y las tools de pizarra). `board.py` define los bloques y las operaciones de la pizarra, `model_catalog.py` consulta OpenRouter, `model_settings.py` guarda las preferencias y resuelve el modelo de cada rol, `usage.py` registra y guarda los tokens y el costo de cada llamada, `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
 | `documents/` | Procesamiento de PDFs en segundo plano. `pipeline.py`: Docling en un proceso aparte, índice Chroma y resumen por documento. `repository.py`: catálogo SQLite (estado y resumen de cada documento). `worker.py` procesa la cola, `cleanup.py` elimina archivos y vectores huérfanos y `storage.py` borra los directorios de cada sesión. |
-| `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos, caché LRU de supervisores, agentes, grafo de estudio, tool `math`, pizarra, calendario, progreso y modelos). |
+| `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos, caché LRU de supervisores, agentes, grafo de estudio, tool `math`, pizarra, calendario, progreso, modelos y uso). |
 | `client/` | Cliente Electron, React y Vite. Ver [client/README.md](client/README.md). |
 
 Archivos de la raíz:
@@ -140,7 +158,7 @@ docker compose down -v   # además borra los volúmenes: sesiones, PDFs, índice
 
 Datos y volúmenes:
 
-- `data_volume` se monta en `/app/data`. Contiene `app.db` (catálogo de PDFs, progreso, repasos y preferencias de modelos), `sessions/<chat_id>/` (PDFs y base vectorial Chroma de cada sesión) y `study.db` (checkpoints de LangGraph: un estado por sesión, con su pizarra).
+- `data_volume` se monta en `/app/data`. Contiene `app.db` (catálogo de PDFs, progreso, repasos, preferencias de modelos y uso), `sessions/<chat_id>/` (PDFs y base vectorial Chroma de cada sesión) y `study.db` (checkpoints de LangGraph: un estado por sesión, con su pizarra).
 - `models_cache` guarda la caché de modelos de Docling y HuggingFace para no descargarlos en cada arranque.
 - Para ver los datos desde el host, cambia `data_volume` por el bind mount `./data:/app/data`. El directorio debe ser escribible por el UID 10001, que es el usuario del contenedor.
 
