@@ -31,6 +31,7 @@ class _FakeStudyGraph:
         self.max_active = 0
         self.calls = []
         self.inputs = []
+        self.configs = []
         self.progress_updates = []
 
     async def aget_state(self, config):
@@ -44,6 +45,7 @@ class _FakeStudyGraph:
         content = graph_input["messages"][-1].content
         self.calls.append(content)
         self.inputs.append(graph_input)
+        self.configs.append(config)
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         try:
@@ -59,6 +61,11 @@ class _FakeStudyGraph:
 class _FakeRepository:
     async def list_ready_with_summaries(self, chat_id):
         return []
+
+
+class _FakeResolver:
+    async def resolve(self, chat_id=None):
+        return {"supervisor": {"model": "acme/modelo"}}
 
 
 class _FakeProgressRepository:
@@ -82,6 +89,7 @@ def _make_client(test, *, delay=0.0, context_ready=True):
     app.state.study_graph = _FakeStudyGraph(delay, context_ready)
     app.state.document_repository = _FakeRepository()
     app.state.progress_repository = _FakeProgressRepository()
+    app.state.model_resolver = _FakeResolver()
     token_patch = patch("config.settings.APP_TOKEN", TOKEN)
     token_patch.start()
     test.addCleanup(token_patch.stop)
@@ -183,6 +191,15 @@ class WebSocketTurnLockTests(unittest.TestCase):
                 websocket.receive_json()
 
 
+class WebSocketModelTests(unittest.TestCase):
+    def test_turn_receives_resolved_models(self):
+        client, graph = _make_client(self)
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "a"})
+            _receive_until(websocket, "agent_response")
+        self.assertEqual(graph.configs[0]["configurable"]["models"], {"supervisor": {"model": "acme/modelo"}})
+
+
 class WebSocketProgressTests(unittest.TestCase):
     UPDATE = {"topic_number": 1, "topic": "Definición", "status": "dominado", "evidence": "Bien."}
 
@@ -240,6 +257,7 @@ class ClosedSocketProgressTests(unittest.IsolatedAsyncioTestCase):
             study_graph=graph,
             document_repository=_FakeRepository(),
             progress_repository=repository,
+            model_resolver=_FakeResolver(),
         ))
         sender = ws.SafeSender(socket)
 

@@ -9,7 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from core.chain import ChainBuilder
-from core.llm import build_model
+from core.llm import build_model, model_for_turn
 from core.agents.catalog import catalog_for_factory
 from core.prompts.context import CONTEXT_CLASSIFIER_PROMPT, STUDY_PLAN_PROMPT
 from core.schemas import ContextClassification, StudyPlan
@@ -29,7 +29,7 @@ class ContextStudyGraph:
     def build_subgraph(self):
         graph = StateGraph(ContextStudyState)
 
-        async def context_classifier(state):
+        async def context_classifier(state, config):
             """Clasifica el contexto acumulado y decide si ya es suficiente."""
             messages = state['messages']
             current_classified_context = state.get("classified_context", None)
@@ -43,7 +43,8 @@ class ContextStudyGraph:
 
             reaming_rounds = 3 - clarification_round
             logger.debug("Rondas de aclaración restantes: %s", reaming_rounds)
-            agent = create_agent(self.model, tools=self.tools_builder.get_tavily_tools(),system_prompt=CONTEXT_CLASSIFIER_PROMPT.format(reaming_rounds=reaming_rounds), response_format=ToolStrategy(ContextClassification))
+            model = model_for_turn(config, "context_classifier", self.model)
+            agent = create_agent(model, tools=self.tools_builder.get_tavily_tools(),system_prompt=CONTEXT_CLASSIFIER_PROMPT.format(reaming_rounds=reaming_rounds), response_format=ToolStrategy(ContextClassification))
 
             response = await agent.ainvoke({"messages": messages})
 
@@ -56,7 +57,7 @@ class ContextStudyGraph:
 
             return "wait_user_response"
 
-        async def build_study_plan(state):
+        async def build_study_plan(state, config):
             """Elige arquetipos del catálogo y escribe el temario de la sesión."""
             classified_context = state['classified_context']
 
@@ -66,7 +67,8 @@ class ContextStudyGraph:
 
             context = "\n".join([session_objetive, session_context, previous_level])
 
-            chain = self.chain_builder.build_chain(self.factory_model, STUDY_PLAN_PROMPT, StudyPlan)
+            model = model_for_turn(config, "factory", self.factory_model)
+            chain = self.chain_builder.build_chain(model, STUDY_PLAN_PROMPT, StudyPlan)
 
             response = await chain.ainvoke({"context": context, "catalog": catalog_for_factory()})
             return {"study_plan": response}

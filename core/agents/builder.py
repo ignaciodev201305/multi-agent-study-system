@@ -25,9 +25,10 @@ SUPERVISOR_TOOLS = (
 ADDED_BLOCKS_NOTE = "Nota para el profesor (no la muestres al alumno): el especialista ya agregó a la pizarra:"
 
 
-def _subagent_tool(archetype: Archetype, focus: str):
+def _subagent_tool(archetype: Archetype, focus: str, models: dict):
     """Envuelve un subagente como tool: recibe un pedido autocontenido y devuelve su respuesta."""
-    model = build_model(f"subagent_{archetype.tier}", temperature=archetype.temperature)
+    role = f"subagent_{archetype.tier}"
+    model = build_model(role, temperature=archetype.temperature, resolved=models.get(role))
     subagent = create_agent(
         model,
         tools=build_tools(archetype.tools),
@@ -61,17 +62,18 @@ def _subagent_tool(archetype: Archetype, focus: str):
 class SupervisorBuilder:
     """Instancia el supervisor de la sesión a partir de su plan de estudio."""
 
-    def __init__(self, study_plan: StudyPlan):
+    def __init__(self, study_plan: StudyPlan, models: dict | None = None):
         self.study_plan = study_plan
+        self.models = models or {}
 
     def build(self):
         """Crea el supervisor con sus especialistas y tools."""
         specialists = [
-            _subagent_tool(ARCHETYPES[selected.archetype], selected.focus)
+            _subagent_tool(ARCHETYPES[selected.archetype], selected.focus, self.models)
             for selected in self.study_plan.archetypes
         ]
         return create_agent(
-            build_model("supervisor"),
+            build_model("supervisor", resolved=self.models.get("supervisor")),
             tools=specialists + build_tools(SUPERVISOR_TOOLS),
             system_prompt=self.system_prompt(),
             context_schema=TurnContext,

@@ -226,7 +226,9 @@ async def _save_progress(repository: ProgressRepository, thread_id: str, result:
 async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: str, message: str) -> None:
     """Ejecuta un turno del grafo padre; él decide si contextualiza o estudia."""
     state = websocket.app.state
-    config = {"configurable": {"thread_id": thread_id}}
+    # Va en la configuración porque un subgrafo reanudado no recibe el estado nuevo del padre.
+    models = await state.model_resolver.resolve(thread_id)
+    config = {"configurable": {"thread_id": thread_id, "models": models}}
     graph = state.study_graph
 
     snapshot = await graph.aget_state(config)
@@ -238,7 +240,11 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
         "progress": await state.progress_repository.list_for_chat(thread_id),
     }
 
-    logger.info("turn start thread_id=%s", thread_id)
+    logger.info(
+        "turn start thread_id=%s models=%s",
+        thread_id,
+        {role: entry["model"] for role, entry in models.items()},
+    )
     result, interrupt_info = await _run_graph(graph, sender, graph_input, config)
     logger.info("turn end thread_id=%s", thread_id)
 

@@ -22,6 +22,7 @@ from config.settings import (
 )
 from core.graphs import StudyGraph
 from core.model_catalog import ModelCatalog
+from core.model_settings import ModelResolver, ModelSettingsRepository
 from core.study.repository import ProgressRepository
 from documents.cleanup import cleanup_orphan_documents
 from documents.pipeline import DoclingExecutor, DocumentIndexer, DocumentPipeline
@@ -48,6 +49,8 @@ async def lifespan(app: FastAPI):
     app.state.document_repository = await DocumentRepository.open(APP_DATABASE_PATH)
     app.state.progress_repository = await ProgressRepository.open(APP_DATABASE_PATH)
     app.state.model_catalog = ModelCatalog()
+    app.state.model_settings = await ModelSettingsRepository.open(APP_DATABASE_PATH)
+    app.state.model_resolver = ModelResolver(app.state.model_settings, app.state.model_catalog)
     app.state.document_queue = asyncio.Queue()
     app.state.document_workers = []
     app.state.docling_executor = None
@@ -56,7 +59,11 @@ async def lifespan(app: FastAPI):
         app.state.study_graph_instance = StudyGraph()
         app.state.study_graph = await app.state.study_graph_instance.compile_graph()
         app.state.docling_executor = DoclingExecutor()
-        document_pipeline = DocumentPipeline(app.state.docling_executor, DocumentIndexer)
+        document_pipeline = DocumentPipeline(
+            app.state.docling_executor,
+            DocumentIndexer,
+            app.state.model_resolver,
+        )
 
         await cleanup_orphan_documents(
             app.state.document_repository,
@@ -95,6 +102,7 @@ async def lifespan(app: FastAPI):
         study_graph = getattr(app.state, "study_graph", None)
         if study_graph is not None:
             await study_graph.checkpointer.conn.close()
+        await app.state.model_settings.close()
         await app.state.progress_repository.close()
         await app.state.document_repository.close()
 

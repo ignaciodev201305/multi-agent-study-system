@@ -126,6 +126,7 @@ class ProgressEndpointTests(unittest.TestCase):
             delete_chat=AsyncMock(),
         )
         app.state.progress_repository = self.repository
+        app.state.model_settings = SimpleNamespace(delete_chat=AsyncMock())
         app.state.study_graph = SimpleNamespace(
             aget_state=AsyncMock(return_value=SimpleNamespace(values={"study_plan": PLAN}, interrupts=())),
             checkpointer=SimpleNamespace(adelete_thread=AsyncMock()),
@@ -182,6 +183,7 @@ class ProgressEndpointTests(unittest.TestCase):
             response = self.client.delete("/chats/thread")
         self.assertEqual(response.status_code, 200)
         self.repository.delete_chat.assert_awaited_once_with("thread")
+        self.client.app.state.model_settings.delete_chat.assert_awaited_once_with("thread")
 
 
 if __name__ == "__main__":

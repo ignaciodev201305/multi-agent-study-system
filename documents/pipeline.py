@@ -206,20 +206,29 @@ class DocumentIndexer:
 class DocumentPipeline:
     """Procesa un documento y devuelve el resultado que el worker guarda en app.db."""
 
-    def __init__(self, executor: DoclingExecutor, indexer_factory):
+    def __init__(self, executor: DoclingExecutor, indexer_factory, model_resolver=None):
         self.executor = executor
         self.indexer_factory = indexer_factory
         self.chain_builder = ChainBuilder()
         self.model = build_model("summarizer")
+        self.model_resolver = model_resolver
+
+    async def _summary_model(self, chat_id: str):
+        """Devuelve el modelo de resumen configurado para la sesión."""
+        if self.model_resolver is None:
+            return self.model
+        models = await self.model_resolver.resolve(chat_id)
+        return build_model("summarizer", resolved=models["summarizer"])
 
     async def process(self, document: dict, pdf_path: Path) -> tuple[dict, int]:
         """Devuelve (resumen como dict, número de fragmentos indexados)."""
         chunks = await self.executor.extract(pdf_path)
+        model = await self._summary_model(document["chat_id"])
         if document["document_type"] == "rag":
-            return await self.process_rag(document, chunks)
-        return await self.process_study_map(chunks)
+            return await self.process_rag(document, chunks, model)
+        return await self.process_study_map(chunks, model)
 
-    async def process_rag(self, document: dict, chunks: list[dict]) -> tuple[dict, int]:
+    async def process_rag(self, document: dict, chunks: list[dict], model) -> tuple[dict, int]:
         """Indexa los fragmentos y genera el resumen del documento."""
         documents = [
             Document(page_content=chunk["page_content"], metadata={"pages": chunk["pages"]})
@@ -231,28 +240,28 @@ class DocumentPipeline:
         )
         if not indexed:
             raise RuntimeError("El documento no tiene texto indexable.")
-        summary = await self._summarize(chunks, BUILD_RAG_CONTEXT_PROMPT, RagContext)
+        summary = await self._summarize(chunks, BUILD_RAG_CONTEXT_PROMPT, RagContext, model)
         return summary.model_dump(), len(indexer.documents_prepared)
 
-    async def process_study_map(self, chunks: list[dict]) -> tuple[dict, int]:
+    async def process_study_map(self, chunks: list[dict], model) -> tuple[dict, int]:
         """Genera el mapa de estudio del documento."""
-        summary = await self._summarize(chunks, MAP_STUDY_PROMPT, MapStudy)
+        summary = await self._summarize(chunks, MAP_STUDY_PROMPT, MapStudy, model)
         return summary.model_dump(), 0
 
-    async def _summarize(self, chunks: list[dict], prompt: str, schema):
+    async def _summarize(self, chunks: list[dict], prompt: str, schema, model):
         """Resumen estructurado; si el texto supera el presupuesto, map-reduce por bloques."""
         text = "\n".join(chunk["page_content"] for chunk in chunks)
         if len(text) > DOCUMENT_SUMMARY_CHAR_BUDGET:
-            text = await self._reduce(chunks)
-        chain = self.chain_builder.build_chain(self.model, prompt, schema)
+            text = await self._reduce(chunks, model)
+        chain = self.chain_builder.build_chain(model, prompt, schema)
         return await chain.ainvoke({"documents": text})
 
-    async def _reduce(self, chunks: list[dict]) -> str:
+    async def _reduce(self, chunks: list[dict], model) -> str:
         """Resume cada bloque y une los resúmenes parciales."""
         blocks = split_into_blocks(
             [chunk["page_content"] for chunk in chunks], DOCUMENT_SUMMARY_CHAR_BUDGET // 2
         )
-        chain = self.chain_builder.build_chain(self.model, PARTIAL_SUMMARY_PROMPT)
+        chain = self.chain_builder.build_chain(model, PARTIAL_SUMMARY_PROMPT)
         partials = []
         # Secuencial para acotar el gasto y el rate limit del proveedor.
         for index, block in enumerate(blocks, start=1):

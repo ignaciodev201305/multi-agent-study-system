@@ -10,6 +10,7 @@ from uuid import uuid4
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 from langchain.messages import AIMessage, HumanMessage
+from pydantic import BaseModel, Field
 
 from api.security import validate_chat_id
 from config.settings import (
@@ -23,11 +24,18 @@ from config.settings import (
 )
 from core.board import Board
 from core.model_catalog import CatalogUnavailable, filter_models
+from core.model_settings import GLOBAL_SCOPE, InvalidModel
 from core.tools.documents import forget_vector_store
 from documents.storage import SessionManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class ModelSelection(BaseModel):
+    """Modelo elegido para un rol; null quita el ajuste."""
+    role: str
+    model: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 @router.get("/chats/{chat_id}/messages")
@@ -88,6 +96,66 @@ async def list_due_reviews_endpoint(request: Request, limit: int = Query(default
     return {"reviews": reviews}
 
 
+def _check_role(role: str | None) -> None:
+    """Rechaza un rol que no exista."""
+    if role is not None and role not in MODEL_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Rol de modelo desconocido.",
+        )
+
+
+def _check_session_scope(chat_id: str) -> None:
+    """Valida el id y evita que una sesión se confunda con el ámbito global."""
+    validate_chat_id(chat_id)
+    if chat_id == GLOBAL_SCOPE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="chat_id_invalido")
+
+
+async def _save_selection(request: Request, scope: str, selection: ModelSelection) -> None:
+    """Valida contra el catálogo y guarda el modelo elegido."""
+    _check_role(selection.role)
+    if selection.model is not None:
+        try:
+            await request.app.state.model_resolver.check_model(selection.role, selection.model)
+        except InvalidModel as error:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error))
+        except CatalogUnavailable:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No se pudo consultar el catálogo de modelos.",
+            )
+    await request.app.state.model_settings.set(scope, selection.role, selection.model)
+
+
+@router.get("/models/settings")
+async def get_model_settings_endpoint(request: Request):
+    """Devuelve el modelo efectivo de cada rol para las sesiones sin ajuste propio."""
+    return {"models": await request.app.state.model_resolver.resolve()}
+
+
+@router.put("/models/settings")
+async def update_model_settings_endpoint(selection: ModelSelection, request: Request):
+    """Cambia el modelo global de un rol."""
+    await _save_selection(request, GLOBAL_SCOPE, selection)
+    return {"models": await request.app.state.model_resolver.resolve()}
+
+
+@router.get("/chats/{chat_id}/models")
+async def get_chat_models_endpoint(chat_id: str, request: Request):
+    """Devuelve el modelo efectivo de cada rol en una sesión."""
+    _check_session_scope(chat_id)
+    return {"chat_id": chat_id, "models": await request.app.state.model_resolver.resolve(chat_id)}
+
+
+@router.put("/chats/{chat_id}/models")
+async def update_chat_models_endpoint(chat_id: str, selection: ModelSelection, request: Request):
+    """Cambia el modelo de un rol en una sesión; aplica desde el turno siguiente."""
+    _check_session_scope(chat_id)
+    await _save_selection(request, chat_id, selection)
+    return {"chat_id": chat_id, "models": await request.app.state.model_resolver.resolve(chat_id)}
+
+
 @router.get("/models")
 async def list_models_endpoint(
     request: Request,
@@ -95,11 +163,7 @@ async def list_models_endpoint(
     q: str = Query(default="", max_length=100),
 ):
     """Lista los modelos de OpenRouter aptos para un rol."""
-    if role is not None and role not in MODEL_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Rol de modelo desconocido.",
-        )
+    _check_role(role)
     try:
         models = await request.app.state.model_catalog.list_models()
     except CatalogUnavailable:
@@ -119,6 +183,7 @@ async def delete_chat_endpoint(chat_id: str, request: Request):
     try:
         await request.app.state.document_repository.delete_chat(chat_id)
         await request.app.state.progress_repository.delete_chat(chat_id)
+        await request.app.state.model_settings.delete_chat(chat_id)
         await request.app.state.study_graph.checkpointer.adelete_thread(chat_id)
 
         session_manager = SessionManager()

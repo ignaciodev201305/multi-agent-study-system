@@ -18,7 +18,7 @@ from config.settings import (
 from core.agents.builder import SupervisorBuilder
 from core.board import Board, board_inventory
 from core.chain import ChainBuilder
-from core.llm import build_model
+from core.llm import build_model, model_for_turn, turn_models
 from core.prompts.session import SUMMARY_PROMPT
 from core.tools import TurnContext
 
@@ -26,6 +26,14 @@ logger = logging.getLogger(__name__)
 
 BOARD_CONTEXT_MAX_ENTRIES = 20
 DUE_REVIEWS_MAX_ENTRIES = 5
+# Los roles que quedan fijados al construir el supervisor.
+SUPERVISOR_ROLES = ("supervisor", "subagent_light", "subagent_heavy")
+
+
+def models_fingerprint(models: dict | None) -> tuple:
+    """Resume los modelos del supervisor para detectar si cambiaron."""
+    models = models or {}
+    return tuple((models.get(role) or {}).get("model") for role in SUPERVISOR_ROLES)
 
 
 class SessionStudyGraph:
@@ -34,40 +42,49 @@ class SessionStudyGraph:
         self.chain_builder = ChainBuilder()
         self.model_context = build_model("summarizer")
         self.supervisors = OrderedDict()
+        self.supervisor_fingerprints = {}
         self.supervisors_lock = Lock()
         self.supervisors_cache_max_entries = SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES
 
-    def _get_cached_supervisor(self, thread_id):
+    def _fresh_supervisor(self, thread_id, models):
+        """Devuelve el supervisor en caché si sigue usando los mismos modelos."""
+        supervisor = self.supervisors.get(thread_id)
+        if supervisor is None or self.supervisor_fingerprints.get(thread_id) != models_fingerprint(models):
+            return None
+        self.supervisors.move_to_end(thread_id)
+        return supervisor
+
+    def _get_cached_supervisor(self, thread_id, models=None):
         """Devuelve el supervisor de una sesión y actualiza su posición LRU."""
         with self.supervisors_lock:
-            supervisor = self.supervisors.get(thread_id)
-            if supervisor is not None:
-                self.supervisors.move_to_end(thread_id)
-            return supervisor
+            return self._fresh_supervisor(thread_id, models)
 
-    def _get_or_build_supervisor(self, thread_id, study_plan):
+    def _get_or_build_supervisor(self, thread_id, study_plan, models=None):
         """Obtiene o reconstruye un supervisor y mantiene acotada la caché LRU."""
         with self.supervisors_lock:
-            supervisor = self.supervisors.get(thread_id)
+            supervisor = self._fresh_supervisor(thread_id, models)
             if supervisor is not None:
-                self.supervisors.move_to_end(thread_id)
                 return supervisor
 
-            supervisor = SupervisorBuilder(study_plan).build()
+            supervisor = SupervisorBuilder(study_plan, models).build()
             self.supervisors[thread_id] = supervisor
+            self.supervisors.move_to_end(thread_id)
+            self.supervisor_fingerprints[thread_id] = models_fingerprint(models)
             while len(self.supervisors) > self.supervisors_cache_max_entries:
-                self.supervisors.popitem(last=False)
+                evicted, _ = self.supervisors.popitem(last=False)
+                self.supervisor_fingerprints.pop(evicted, None)
             return supervisor
 
     def remove_session_cache_entry(self, thread_id):
         """Retira de la caché el supervisor asociado a una sesión eliminada."""
         with self.supervisors_lock:
+            self.supervisor_fingerprints.pop(thread_id, None)
             return self.supervisors.pop(thread_id, None) is not None
 
     def add_nodes(self, graph):
         """Añade al grafo padre los nodos del turno; la entrada es summarize_conversation."""
 
-        async def summarize_conversation(state):
+        async def summarize_conversation(state, config):
             """Resume los mensajes antiguos en `summary` y los quita del historial."""
             messages = state["messages"]
             if len(messages) <= SESSION_HISTORY_MAX_MESSAGES:
@@ -75,7 +92,8 @@ class SessionStudyGraph:
 
             # Resume todo lo que se quita del historial.
             messages_to_summarize = messages[:-SESSION_HISTORY_KEEP_MESSAGES]
-            chain = self.chain_builder.build_chain(self.model_context, SUMMARY_PROMPT)
+            model = model_for_turn(config, "summarizer", self.model_context)
+            chain = self.chain_builder.build_chain(model, SUMMARY_PROMPT)
             new_summary = await chain.ainvoke({
                 "current_summary": state.get("summary", ""),
                 "messages_to_summarize": "\n".join(
@@ -92,14 +110,14 @@ class SessionStudyGraph:
         def build_supervisor(state, config):
             """Construye y registra en memoria el supervisor de la sesión."""
             thread_id = config["configurable"]["thread_id"]
-            self._get_or_build_supervisor(thread_id, state["study_plan"])
+            self._get_or_build_supervisor(thread_id, state["study_plan"], turn_models(config))
             return {}
 
         def check_supervisor(state, config):
             """Decide si el supervisor de la sesión ya está listo o debe construirse."""
             thread_id = config["configurable"]["thread_id"]
 
-            if self._get_cached_supervisor(thread_id) is None:
+            if self._get_cached_supervisor(thread_id, turn_models(config)) is None:
                 return "build_supervisor"
             return "chat"
 
@@ -107,7 +125,7 @@ class SessionStudyGraph:
             """Invoca al supervisor con el contexto compuesto y el historial."""
             thread_id = config["configurable"]["thread_id"]
 
-            supervisor = self._get_or_build_supervisor(thread_id, state["study_plan"])
+            supervisor = self._get_or_build_supervisor(thread_id, state["study_plan"], turn_models(config))
             # La copia solo llega al checkpoint si el turno termina bien.
             board = Board.model_validate(deepcopy(state.get("board") or {}))
             turn_context = TurnContext(
