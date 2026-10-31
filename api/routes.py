@@ -17,10 +17,12 @@ from config.settings import (
     MAX_DOCUMENTS_PER_CHAT,
     MAX_PDF_BYTES_PER_CHAT,
     MAX_PDF_SIZE_BYTES,
+    MODEL_ROLES,
     PDF_DIRECTORY,
     UPLOAD_CHUNK_SIZE,
 )
 from core.board import Board
+from core.model_catalog import CatalogUnavailable, filter_models
 from core.tools.documents import forget_vector_store
 from documents.storage import SessionManager
 
@@ -84,6 +86,28 @@ async def list_due_reviews_endpoint(request: Request, limit: int = Query(default
     """Lista los repasos vencidos de todas las sesiones."""
     reviews = await request.app.state.progress_repository.list_due(datetime.now(timezone.utc), limit)
     return {"reviews": reviews}
+
+
+@router.get("/models")
+async def list_models_endpoint(
+    request: Request,
+    role: str | None = None,
+    q: str = Query(default="", max_length=100),
+):
+    """Lista los modelos de OpenRouter aptos para un rol."""
+    if role is not None and role not in MODEL_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Rol de modelo desconocido.",
+        )
+    try:
+        models = await request.app.state.model_catalog.list_models()
+    except CatalogUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No se pudo consultar el catálogo de modelos.",
+        )
+    return {"models": filter_models(models, role, q)}
 
 
 @router.delete("/chats/{chat_id}")
