@@ -6,6 +6,7 @@ import logging
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException, status
 from langchain.messages import HumanMessage
@@ -22,6 +23,7 @@ from api.security import (
 from config.settings import WS_MAX_MESSAGE_CHARS
 from core.streaming import execute_astream_graph
 from core.study.repository import ProgressRepository
+from core.usage import UsageTracker, session_usage
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -31,6 +33,7 @@ WS_IDLE_TIMEOUT_SECONDS = 300
 TURN_WAIT_TIMEOUT_SECONDS = 120
 HEARTBEAT_INTERVAL_SECONDS = 15
 WS_CLOSE_SUPERSEDED = 4000
+USAGE_EVENT_FIELDS = ("context_used", "context_limit", "total_tokens", "cost_usd", "cost_estimated", "cost_unknown")
 
 
 class _WebSocketIdleTimeout(Exception):
@@ -223,12 +226,51 @@ async def _save_progress(repository: ProgressRepository, thread_id: str, result:
         logger.exception("No se pudo guardar el progreso thread_id=%s", thread_id)
 
 
+class _TurnUsage:
+    """Guarda el uso de un turno a medida que ocurre y se lo informa al cliente."""
+
+    def __init__(self, state, sender: SafeSender, thread_id: str):
+        self.state = state
+        self.sender = sender
+        self.thread_id = thread_id
+        self.turn_id = uuid4().hex
+        self.tracker = UsageTracker(catalog=state.model_resolver.catalog, on_record=self.flush)
+        self._saved = 0
+        self._lock = asyncio.Lock()
+
+    async def flush(self, _record=None) -> None:
+        """Guarda lo pendiente y envía el resumen; un fallo no debe afectar al turno."""
+        try:
+            async with self._lock:
+                pending = self.tracker.records[self._saved:]
+                if not pending:
+                    return
+                await self.state.usage_repository.add_records(self.thread_id, self.turn_id, pending)
+                self._saved += len(pending)
+            summary = await session_usage(
+                self.state.usage_repository,
+                self.state.model_resolver,
+                self.thread_id,
+            )
+            await self.sender.send_json({
+                "type": "usage",
+                "content": "",
+                **{field: summary[field] for field in USAGE_EVENT_FIELDS},
+            })
+        except Exception:
+            logger.exception("No se pudo guardar el uso thread_id=%s", self.thread_id)
+
+
 async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: str, message: str) -> None:
     """Ejecuta un turno del grafo padre; él decide si contextualiza o estudia."""
     state = websocket.app.state
     # Va en la configuración porque un subgrafo reanudado no recibe el estado nuevo del padre.
     models = await state.model_resolver.resolve(thread_id)
-    config = {"configurable": {"thread_id": thread_id, "models": models}}
+    usage = _TurnUsage(state, sender, thread_id)
+    config = {
+        "configurable": {"thread_id": thread_id, "models": models},
+        "callbacks": [usage.tracker],
+    }
     graph = state.study_graph
 
     snapshot = await graph.aget_state(config)
@@ -245,7 +287,11 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
         thread_id,
         {role: entry["model"] for role, entry in models.items()},
     )
-    result, interrupt_info = await _run_graph(graph, sender, graph_input, config)
+    try:
+        result, interrupt_info = await _run_graph(graph, sender, graph_input, config)
+    finally:
+        # Un turno fallido también gastó.
+        await usage.flush()
     logger.info("turn end thread_id=%s", thread_id)
 
     if interrupt_info:

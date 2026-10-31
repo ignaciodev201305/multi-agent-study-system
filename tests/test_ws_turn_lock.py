@@ -64,6 +64,8 @@ class _FakeRepository:
 
 
 class _FakeResolver:
+    catalog = None
+
     async def resolve(self, chat_id=None):
         return {"supervisor": {"model": "acme/modelo"}}
 
@@ -90,6 +92,7 @@ def _make_client(test, *, delay=0.0, context_ready=True):
     app.state.document_repository = _FakeRepository()
     app.state.progress_repository = _FakeProgressRepository()
     app.state.model_resolver = _FakeResolver()
+    app.state.usage_repository = None
     token_patch = patch("config.settings.APP_TOKEN", TOKEN)
     token_patch.start()
     test.addCleanup(token_patch.stop)
@@ -258,6 +261,7 @@ class ClosedSocketProgressTests(unittest.IsolatedAsyncioTestCase):
             document_repository=_FakeRepository(),
             progress_repository=repository,
             model_resolver=_FakeResolver(),
+            usage_repository=None,
         ))
         sender = ws.SafeSender(socket)
 

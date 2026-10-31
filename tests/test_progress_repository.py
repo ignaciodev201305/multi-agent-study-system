@@ -135,6 +135,13 @@ class ProgressEndpointTests(unittest.TestCase):
         app.state.study_graph_instance = MagicMock()
         app.state.session_registry = MagicMock()
         app.state.session_registry.is_turn_active.return_value = False
+        app.state.usage_repository = SimpleNamespace(
+            summary=AsyncMock(side_effect=lambda chat_id: {"context_model": "acme/modelo", "total_tokens": 7}),
+            delete_chat=AsyncMock(),
+        )
+        app.state.model_resolver = SimpleNamespace(
+            catalog=SimpleNamespace(list_models=AsyncMock(return_value=[{"id": "acme/modelo", "context_length": 100}])),
+        )
         self.client = TestClient(app)
 
     def test_progress_includes_syllabus(self):

@@ -639,10 +639,12 @@ class BoardStudyGraphTests(unittest.IsolatedAsyncioTestCase):
         state = SimpleNamespace(
             study_graph=self.graph,
             progress_repository=progress_repository,
+            usage_repository=None,
+            model_resolver=None,
             session_registry=SimpleNamespace(is_turn_active=lambda chat_id: False),
         )
         request = SimpleNamespace(app=SimpleNamespace(state=state))
-        with patch("api.routes.validate_chat_id"):
+        with patch("api.routes.validate_chat_id"), patch("api.routes.session_usage", AsyncMock(return_value={})):
             empty = await list_chat_messages_endpoint("t", request)
             self.assertEqual(empty["board"], {"blocks": [], "revision": 0, "next_id": 1})
 

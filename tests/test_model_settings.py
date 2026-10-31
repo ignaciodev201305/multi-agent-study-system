@@ -141,7 +141,7 @@ class ResolutionTests(_Base):
 
 class BuildModelTests(unittest.TestCase):
     def kwargs(self, role="context_classifier", **arguments):
-        with patch("core.llm.ChatOpenAI") as chat, patch.dict(
+        with patch("core.llm.OpenRouterChat") as chat, patch.dict(
             MODEL_ROLES[role], {"reasoning_effort": "medium"}
         ):
             build_model(role, **arguments)
@@ -155,6 +155,10 @@ class BuildModelTests(unittest.TestCase):
 
     def test_uses_resolved_model(self):
         self.assertEqual(self.kwargs(resolved={"model": TOOLS_MODEL})["model"], TOOLS_MODEL)
+
+    def test_tags_role_and_model(self):
+        kwargs = self.kwargs(resolved={"model": TOOLS_MODEL})
+        self.assertEqual(kwargs["tags"], ["role:context_classifier", f"model:{TOOLS_MODEL}"])
 
     def test_omits_unsupported_parameters(self):
         kwargs = self.kwargs(resolved={

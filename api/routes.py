@@ -26,6 +26,7 @@ from core.board import Board
 from core.model_catalog import CatalogUnavailable, filter_models
 from core.model_settings import GLOBAL_SCOPE, InvalidModel
 from core.tools.documents import forget_vector_store
+from core.usage import session_usage
 from documents.storage import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,15 @@ class ModelSelection(BaseModel):
     """Modelo elegido para un rol; null quita el ajuste."""
     role: str
     model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+async def _chat_usage(request: Request, chat_id: str) -> dict:
+    """Resume el uso de la sesión."""
+    return await session_usage(
+        request.app.state.usage_repository,
+        request.app.state.model_resolver,
+        chat_id,
+    )
 
 
 @router.get("/chats/{chat_id}/messages")
@@ -71,7 +81,15 @@ async def list_chat_messages_endpoint(chat_id: str, request: Request):
         "messages": messages,
         "board": snapshot.values.get("board") or Board().model_dump(),
         "progress": await request.app.state.progress_repository.list_for_chat(chat_id),
+        "usage": await _chat_usage(request, chat_id),
     }
+
+
+@router.get("/chats/{chat_id}/usage")
+async def get_chat_usage_endpoint(chat_id: str, request: Request):
+    """Devuelve los tokens, el costo y el contexto usados por una sesión."""
+    validate_chat_id(chat_id)
+    return {"chat_id": chat_id, **await _chat_usage(request, chat_id)}
 
 
 @router.get("/chats/{chat_id}/progress")
@@ -184,6 +202,7 @@ async def delete_chat_endpoint(chat_id: str, request: Request):
         await request.app.state.document_repository.delete_chat(chat_id)
         await request.app.state.progress_repository.delete_chat(chat_id)
         await request.app.state.model_settings.delete_chat(chat_id)
+        await request.app.state.usage_repository.delete_chat(chat_id)
         await request.app.state.study_graph.checkpointer.adelete_thread(chat_id)
 
         session_manager = SessionManager()

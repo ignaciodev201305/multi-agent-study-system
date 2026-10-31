@@ -24,6 +24,7 @@ from core.graphs import StudyGraph
 from core.model_catalog import ModelCatalog
 from core.model_settings import ModelResolver, ModelSettingsRepository
 from core.study.repository import ProgressRepository
+from core.usage import UsageRepository
 from documents.cleanup import cleanup_orphan_documents
 from documents.pipeline import DoclingExecutor, DocumentIndexer, DocumentPipeline
 from documents.repository import DocumentRepository
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
     app.state.session_registry = SessionRegistry()
     app.state.document_repository = await DocumentRepository.open(APP_DATABASE_PATH)
     app.state.progress_repository = await ProgressRepository.open(APP_DATABASE_PATH)
+    app.state.usage_repository = await UsageRepository.open(APP_DATABASE_PATH)
     app.state.model_catalog = ModelCatalog()
     app.state.model_settings = await ModelSettingsRepository.open(APP_DATABASE_PATH)
     app.state.model_resolver = ModelResolver(app.state.model_settings, app.state.model_catalog)
@@ -83,6 +85,7 @@ async def lifespan(app: FastAPI):
                     app.state.document_queue,
                     app.state.document_repository,
                     document_pipeline,
+                    app.state.usage_repository,
                 ),
                 name=f"document-worker-{index}",
             )
@@ -103,6 +106,7 @@ async def lifespan(app: FastAPI):
         if study_graph is not None:
             await study_graph.checkpointer.conn.close()
         await app.state.model_settings.close()
+        await app.state.usage_repository.close()
         await app.state.progress_repository.close()
         await app.state.document_repository.close()
 

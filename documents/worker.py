@@ -5,16 +5,32 @@ import logging
 from pathlib import Path
 
 from config.settings import DATA_DIRECTORY, DOCUMENT_MAX_ATTEMPTS, PDF_DIRECTORY
+from core.usage import UsageRepository, UsageTracker
 from documents.repository import DocumentRepository
 from documents.pipeline import DocumentIndexer, DocumentPipeline
 
 logger = logging.getLogger(__name__)
 
 
+async def _save_usage(
+    document: dict,
+    tracker: UsageTracker,
+    repository: DocumentRepository,
+    usage_repository: UsageRepository,
+) -> None:
+    """Guarda el gasto del documento; una sesión borrada no conserva filas de uso."""
+    try:
+        if await repository.get_document(document["document_id"]) is not None:
+            await usage_repository.add_records(document["chat_id"], document["document_id"], tracker.records)
+    except Exception:
+        logger.exception("No se pudo guardar el uso document_id=%s", document["document_id"])
+
+
 async def process_document_job(
     document_id: str,
     repository: DocumentRepository,
     pipeline: DocumentPipeline,
+    usage_repository: UsageRepository,
 ) -> None:
     """Reclama un PDF en cola, lo procesa y guarda su resultado en el catálogo."""
     pending_document = await repository.get_document(document_id)
@@ -33,8 +49,9 @@ async def process_document_job(
             / f"{document_id}.pdf"
         )
 
+        tracker = pipeline.usage_tracker()
         try:
-            summary, chunks = await pipeline.process(document, pdf_path)
+            summary, chunks = await pipeline.process(document, pdf_path, tracker)
         except asyncio.CancelledError:
             await repository.requeue_document(document_id, DOCUMENT_MAX_ATTEMPTS)
             raise
@@ -50,6 +67,9 @@ async def process_document_job(
             )
             await repository.mark_failed(document_id, "No se pudo procesar el documento.")
             return
+        finally:
+            # Un procesamiento fallido también gastó.
+            await _save_usage(document, tracker, repository, usage_repository)
 
         saved = await repository.mark_ready(document_id, summary, chunks)
         if not saved and await repository.get_document(document_id) is None:
@@ -71,12 +91,13 @@ async def document_worker(
     queue: asyncio.Queue,
     repository: DocumentRepository,
     pipeline: DocumentPipeline,
+    usage_repository: UsageRepository,
 ) -> None:
     """Consume trabajos de la cola continuamente y marca cada tarea como atendida."""
     while True:
         document_id = await queue.get()
         try:
-            await process_document_job(document_id, repository, pipeline)
+            await process_document_job(document_id, repository, pipeline, usage_repository)
         except asyncio.CancelledError:
             raise
         except Exception:

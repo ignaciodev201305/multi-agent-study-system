@@ -8,20 +8,50 @@ from config.settings import EMBEDDINGS_MODEL, MODEL_ROLES, OPENAI_API_BASE
 
 logger = logging.getLogger(__name__)
 
+# Etiquetas con las que el registro de uso identifica cada llamada.
+ROLE_TAG = "role:"
+MODEL_TAG = "model:"
+
+
+def _chunk_cost(chunk) -> float | None:
+    """Devuelve el costo que informa un chunk, o None si no trae uno válido."""
+    try:
+        cost = chunk["usage"]["cost"]
+    except (KeyError, TypeError):
+        return None
+    return cost if isinstance(cost, (int, float)) and not isinstance(cost, bool) else None
+
+
+class OpenRouterChat(ChatOpenAI):
+    """ChatOpenAI que conserva el costo que OpenRouter informa en cada respuesta."""
+
+    def _convert_chunk_to_generation_chunk(self, chunk, *args, **kwargs):
+        """Copia el costo del chunk de uso a los metadatos del mensaje."""
+        generation = super()._convert_chunk_to_generation_chunk(chunk, *args, **kwargs)
+        cost = _chunk_cost(chunk)
+        if generation is not None and cost is not None:
+            generation.message.response_metadata["cost"] = cost
+        return generation
+
 
 def build_model(role: str, temperature: float | None = None, resolved: dict | None = None):
-    """Construye el ChatOpenAI de un rol; `resolved` fija el modelo y sus capacidades."""
+    """Construye el modelo de un rol; `resolved` fija el modelo y sus capacidades."""
     spec = MODEL_ROLES[role]
     resolved = resolved or {}
     model = resolved.get("model", spec["model"])
-    kwargs = {"model": model, "openai_api_base": OPENAI_API_BASE}
+    # OpenRouter puede responder con otro id: la etiqueta conserva el que está en el catálogo.
+    kwargs = {
+        "model": model,
+        "openai_api_base": OPENAI_API_BASE,
+        "tags": [f"{ROLE_TAG}{role}", f"{MODEL_TAG}{model}"],
+    }
     # Una capacidad desconocida se manda igual; solo se omite si consta que no existe.
     if resolved.get("supports_temperature") is not False:
         kwargs["temperature"] = spec["temperature"] if temperature is None else temperature
     if spec["reasoning_effort"] and resolved.get("supports_reasoning") is not False:
         kwargs["reasoning_effort"] = spec["reasoning_effort"]
     try:
-        return ChatOpenAI(**kwargs)
+        return OpenRouterChat(**kwargs)
     except Exception:
         logger.exception("Error al instanciar el modelo %s (rol %s)", model, role)
         return None
