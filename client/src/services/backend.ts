@@ -9,6 +9,9 @@ import type {
   DocumentProcessingStatus,
   DocumentType,
   DueReview,
+  ModelInfo,
+  ModelRole,
+  ResolvedModels,
   ThinkingMetadata,
 } from '../types';
 
@@ -220,6 +223,48 @@ export const fetchDueReviews = async (baseUrl: string): Promise<DueReview[]> => 
   }
   return payload.reviews as DueReview[];
 };
+
+const requestModels = async <T>(url: string, init: RequestInit, key: string, fallback: string): Promise<T> => {
+  let response: Response;
+  try {
+    response = await fetch(url, { cache: 'no-store', ...init, headers: { ...authHeaders(), ...init.headers } });
+  } catch {
+    throw new Error(fallback);
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok || !isRecord(payload) || !(key in payload)) {
+    const detail = isRecord(payload) ? payload.detail : undefined;
+    throw new Error(typeof detail === 'string' ? detail : fallback);
+  }
+  return payload[key] as T;
+};
+
+const modelSettingsUrl = (baseUrl: string, sessionId?: string): string =>
+  sessionId ? `${chatUrl(baseUrl, sessionId)}/models` : httpUrl(baseUrl, '/models/settings');
+
+export const fetchModels = (baseUrl: string, role: ModelRole, query: string): Promise<ModelInfo[]> => {
+  const params = new URLSearchParams({ role, q: query });
+  return requestModels(`${httpUrl(baseUrl, '/models')}?${params.toString()}`, {}, 'models', 'No se pudo consultar el catálogo de modelos.');
+};
+
+export const fetchModelSettings = (baseUrl: string, sessionId?: string): Promise<ResolvedModels> =>
+  requestModels(modelSettingsUrl(baseUrl, sessionId), {}, 'models', 'No se pudieron consultar los modelos.');
+
+export const updateModelSetting = (
+  baseUrl: string,
+  sessionId: string | undefined,
+  role: ModelRole,
+  model: string | null,
+): Promise<ResolvedModels> => requestModels(
+  modelSettingsUrl(baseUrl, sessionId),
+  {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, model }),
+  },
+  'models',
+  'No se pudo guardar el modelo.',
+);
 
 export const deleteChat = async (baseUrl: string, sessionId: string): Promise<void> => {
   const target = chatUrl(baseUrl, sessionId);

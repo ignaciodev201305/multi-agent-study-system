@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Composer } from './Composer';
 import { Conversation } from './Conversation';
 import { DocsPanel } from './DocsPanel';
+import { ModelSettingsPanel } from './ModelSettingsPanel';
 import { StudySidePanel } from './StudySidePanel';
 import type {
   Board,
@@ -71,6 +73,8 @@ export function SessionView({
   onShareWithTutor,
   onComposerDraftApplied,
 }: SessionViewProps): JSX.Element {
+  const [modelsOpen, setModelsOpen] = useState(false);
+
   return (
     <div className={styles.appShell}>
       <DocsPanel
@@ -94,6 +98,9 @@ export function SessionView({
             </div>
           </div>
           <div className={styles.topbarActions}>
+            <button className={styles.themeButton} onClick={() => setModelsOpen(true)} type="button">
+              Modelos
+            </button>
             <button
               aria-expanded={sidePanelOpen}
               className={styles.themeButton}
@@ -141,6 +148,9 @@ export function SessionView({
           tab={sidePanelTab}
           title={session.title}
         />
+      )}
+      {modelsOpen && (
+        <ModelSettingsPanel backendUrl={backendUrl} onClose={() => setModelsOpen(false)} sessionId={session.id} />
       )}
     </div>
   );

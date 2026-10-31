@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchDueReviews } from '../services/backend';
+import { ModelSettingsPanel } from './ModelSettingsPanel';
 import type { DueReview, StudyPhase, StudySession, Theme } from '../types';
 import styles from '../App.module.css';
 
@@ -50,6 +51,7 @@ export function WelcomeView({
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [dueReviews, setDueReviews] = useState<DueReview[]>([]);
+  const [modelsOpen, setModelsOpen] = useState(false);
   const sessionTitles = new Map(sessions.map((session) => [session.id, session.title]));
   const localDueReviews = dueReviews.filter((review) => sessionTitles.has(review.chat_id));
 
@@ -93,9 +95,14 @@ export function WelcomeView({
           <span className={styles.brandMark} aria-hidden="true">EM</span>
           <span>Estudio Multiagente</span>
         </div>
-        <button className={styles.themeButton} onClick={onToggleTheme} type="button">
-          {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
-        </button>
+        <div className={styles.topbarActions}>
+          <button className={styles.themeButton} onClick={() => setModelsOpen(true)} type="button">
+            Modelos
+          </button>
+          <button className={styles.themeButton} onClick={onToggleTheme} type="button">
+            {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+          </button>
+        </div>
       </header>
 
       <div className={styles.homeBody}>
@@ -197,6 +204,7 @@ export function WelcomeView({
           )}
         </section>
       </div>
+      {modelsOpen && <ModelSettingsPanel backendUrl={backendUrl} onClose={() => setModelsOpen(false)} />}
     </div>
   );
 }

@@ -94,6 +94,25 @@ export type BoardPatch =
   | { type: 'board_patch'; content: string; revision: number; op: 'remove'; block_id: string }
   | { type: 'board_patch'; content: string; revision: number; op: 'clear' };
 
+export type ModelRole = 'supervisor' | 'subagent_light' | 'subagent_heavy' | 'context_classifier' | 'factory' | 'summarizer';
+export type ModelSource = 'session' | 'global' | 'env' | 'default';
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  context_length: number | null;
+  prompt_price: number | null;
+  completion_price: number | null;
+}
+
+export interface ResolvedModel {
+  model: string;
+  source: ModelSource;
+  unavailable: string[];
+}
+
+export type ResolvedModels = Record<ModelRole, ResolvedModel>;
+
 export interface ComposerDraft {
   sessionId: string;
   content: string;

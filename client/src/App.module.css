@@ -221,6 +221,33 @@
 .pythonOutput pre[data-kind='error'] { border-color: color-mix(in srgb, var(--danger) 38%, transparent); color: var(--danger); }
 .pythonOutput img { display: block; max-width: 100%; height: auto; border-radius: 6px; background: #fff; }
 
+.modelOverlay { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, .5); }
+.modelDialog { display: flex; width: min(640px, 100%); max-height: min(720px, calc(100vh - 40px)); flex-direction: column; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--sidebar); color: var(--text); overflow: hidden; }
+.modelDialogHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--border); }
+.modelDialogHeader h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.modelDialogHeader p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+.modelRoles { display: flex; min-height: 0; flex-direction: column; margin: 0; padding: 4px 16px 12px; list-style: none; overflow: auto; }
+.modelRole { padding: 11px 0; border-bottom: 1px solid var(--border); }
+.modelRole:last-child { border-bottom: 0; }
+.modelRoleRow { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.modelRoleInfo { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.modelRoleName { font-size: 12px; font-weight: 600; }
+.modelRoleId { color: var(--text); font-family: "IBM Plex Mono", monospace; font-size: 10px; overflow-wrap: anywhere; }
+.modelRoleActions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.modelHint { margin: 0; color: var(--subtle); font-size: 10px; line-height: 1.5; }
+.modelUnavailable { margin: 6px 0 0; color: var(--danger); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.modelPicker { display: flex; flex-direction: column; gap: 7px; margin-top: 9px; }
+.modelPickerSearch { display: flex; align-items: center; gap: 6px; }
+.modelPickerSearch input { min-width: 0; height: 30px; flex: 1; border: 1px solid var(--border-strong); border-radius: 6px; outline: 0; padding: 0 9px; background: var(--surface); color: var(--text); font-size: 11px; }
+.modelPickerSearch input:focus { border-color: var(--accent); }
+.modelList { display: flex; max-height: 240px; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; overflow: auto; }
+.modelOption { display: flex; width: 100%; flex-direction: column; gap: 1px; border: 1px solid transparent; border-radius: 6px; padding: 6px 8px; background: transparent; color: var(--text); cursor: pointer; text-align: left; }
+.modelOption:hover { background: var(--elevated-hover); }
+.modelOption[data-current] { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+.modelOptionName { font-size: 11px; font-weight: 550; }
+.modelOptionId { color: var(--muted); font-family: "IBM Plex Mono", monospace; font-size: 9px; overflow-wrap: anywhere; }
+.modelOptionMeta { color: var(--subtle); font-size: 9px; }
+
 .progressList { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 10px 8px 16px; list-style: none; }
 .progressItem { display: flex; flex-direction: column; gap: 5px; border-radius: 7px; padding: 9px 8px; }
 .progressItem:hover { background: var(--elevated-hover); }
