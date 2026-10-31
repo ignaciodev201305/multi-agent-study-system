@@ -83,6 +83,14 @@ La sesión tiene un panel a la derecha con tres pestañas. Se cierra con su bot�
 
 La pantalla de inicio agrega «Para repasar hoy» con los repasos vencidos de `GET /reviews/due`, y oculta los que no tienen sesión local.
 
+## Modelos
+
+El botón «Modelos» abre el panel de configuración. Desde la pantalla de inicio edita los modelos globales, y desde la barra de la sesión, los de esa sesión.
+
+Cada rol muestra su modelo efectivo y su origen: por defecto, global o sesión. «Cambiar» abre un buscador con precio por millón de tokens y contexto, filtrado por lo que exige ese rol, y «Restablecer» quita el ajuste. Si un modelo guardado ya no está disponible, la fila lo indica.
+
+El cambio aplica desde el mensaje siguiente. El cliente solo habla con el backend: nunca recibe la clave de OpenRouter.
+
 ## Matemática
 
 Los mensajes y los bloques de la pizarra se renderizan como Markdown con `remark-math` y `rehype-katex`: `$...$` para matemática en línea y `$$...$$` en bloque. Los bloques `math` reciben LaTeX sin delimitadores.

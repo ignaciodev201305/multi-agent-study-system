@@ -49,6 +49,25 @@ El alumno ejecuta Python en el cliente con Pyodide, dentro de un Web Worker. El 
 
 Los detalles están en [client/README.md](client/README.md#python-con-pyodide).
 
+### Modelos por rol
+
+Desde la interfaz se elige el modelo de cada rol entre los del catálogo de OpenRouter, para todas las sesiones o solo para una. El orden de prioridad es: sesión, global, `MODEL_<ROL>` y valor por defecto. La clave sigue solo en `.env` y nunca llega al cliente.
+
+- `supervisor`, `subagent_light`, `subagent_heavy` y `context_classifier` exigen un modelo con tools. `factory` y `summarizer` solo necesitan texto.
+- El catálogo se guarda 1 h en memoria. Si OpenRouter falla, se usa la última copia. Las variantes `:batch` se excluyen, porque no responden en `chat/completions`.
+- Un cambio aplica desde el turno siguiente, y el supervisor se reconstruye si cambió alguno de sus modelos.
+- `temperature` y `reasoning_effort` se omiten en los modelos que no los soportan.
+- Si un modelo guardado desaparece del catálogo o deja de cumplir los requisitos, se usa el siguiente en la prioridad, queda en el log y la interfaz lo marca como no disponible.
+- Los embeddings quedan fuera del selector, porque cambiarlos invalidaría los vectores ya guardados.
+
+| Endpoint | Contenido |
+|---|---|
+| `GET /models?role=&q=` | Modelos aptos para un rol, con precio por millón de tokens y contexto. |
+| `GET` y `PUT /models/settings` | Modelo efectivo de cada rol y ajuste global. |
+| `GET` y `PUT /chats/{id}/models` | Modelo efectivo de cada rol en una sesión y su ajuste. |
+
+El `PUT` recibe `{"role": "...", "model": "..."}`, valida contra el catálogo y con `model: null` quita el ajuste.
+
 ## Componentes
 
 - **Backend** (`api/`, `core/`, `documents/`, `config/`): FastAPI y LangGraph sobre Python 3.14. Usa OpenRouter para los modelos, Tavily para la búsqueda web, Chroma para los vectores y SQLite para el catálogo de PDFs, el progreso del alumno y los checkpoints de los grafos.
@@ -58,11 +77,11 @@ Los detalles están en [client/README.md](client/README.md#python-con-pyodide).
 
 | Ruta | Contenido |
 |---|---|
-| `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats/{id}/messages`, `GET /chats/{id}/progress`, `GET /reviews/due`, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
+| `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats/{id}/messages`, `GET /chats/{id}/progress`, `GET /reviews/due`, los endpoints de modelos, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
 | `config/` | `settings.py`: registro de modelos por rol (`MODEL_ROLES`, con override por entorno), rutas de datos y límites. |
-| `core/` | Grafos y agentes. `graphs/` (`study.py`: grafo padre con un checkpointer; `context.py`: subgrafo de contexto; `session.py`: nodos del turno), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `study/` (`scheduler.py`: calendario Leitner; `repository.py`: progreso e historial en SQLite), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress`, `web_search` y las tools de pizarra). `board.py` define los bloques y las operaciones de la pizarra, `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
+| `core/` | Grafos y agentes. `graphs/` (`study.py`: grafo padre con un checkpointer; `context.py`: subgrafo de contexto; `session.py`: nodos del turno), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `study/` (`scheduler.py`: calendario Leitner; `repository.py`: progreso e historial en SQLite), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress`, `web_search` y las tools de pizarra). `board.py` define los bloques y las operaciones de la pizarra, `model_catalog.py` consulta OpenRouter, `model_settings.py` guarda las preferencias y resuelve el modelo de cada rol, `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
 | `documents/` | Procesamiento de PDFs en segundo plano. `pipeline.py`: Docling en un proceso aparte, índice Chroma y resumen por documento. `repository.py`: catálogo SQLite (estado y resumen de cada documento). `worker.py` procesa la cola, `cleanup.py` elimina archivos y vectores huérfanos y `storage.py` borra los directorios de cada sesión. |
-| `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos, caché LRU de supervisores, agentes, grafo de estudio, tool `math`, pizarra, calendario y progreso). |
+| `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos, caché LRU de supervisores, agentes, grafo de estudio, tool `math`, pizarra, calendario, progreso y modelos). |
 | `client/` | Cliente Electron, React y Vite. Ver [client/README.md](client/README.md). |
 
 Archivos de la raíz:
@@ -92,7 +111,7 @@ cp .env.example .env
 
 Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `SUPERVISOR_RECURSION_LIMIT` (40), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8) y `BOARD_MAX_PLOT_FUNCTIONS` (4).
 
-Modelos por rol (`context_classifier`, `factory`, `supervisor`, `subagent_light`, `subagent_heavy`, `summarizer`): se cambian sin tocar código con `MODEL_<ROL>`, `TEMPERATURE_<ROL>` y `REASONING_<ROL>` (p. ej. `MODEL_SUPERVISOR=openai/gpt-5.5`). Los embeddings con `MODEL_EMBEDDINGS`.
+Modelos por rol (`context_classifier`, `factory`, `supervisor`, `subagent_light`, `subagent_heavy`, `summarizer`): se cambian sin tocar código con `MODEL_<ROL>`, `TEMPERATURE_<ROL>` y `REASONING_<ROL>` (p. ej. `MODEL_SUPERVISOR=openai/gpt-5.5`). Lo elegido en la interfaz tiene prioridad sobre estas variables. Los embeddings con `MODEL_EMBEDDINGS`.
 
 ## Levantar con Docker
 
@@ -121,7 +140,7 @@ docker compose down -v   # además borra los volúmenes: sesiones, PDFs, índice
 
 Datos y volúmenes:
 
-- `data_volume` se monta en `/app/data`. Contiene `app.db` (catálogo de PDFs, progreso y repasos), `sessions/<chat_id>/` (PDFs y base vectorial Chroma de cada sesión) y `study.db` (checkpoints de LangGraph: un estado por sesión, con su pizarra).
+- `data_volume` se monta en `/app/data`. Contiene `app.db` (catálogo de PDFs, progreso, repasos y preferencias de modelos), `sessions/<chat_id>/` (PDFs y base vectorial Chroma de cada sesión) y `study.db` (checkpoints de LangGraph: un estado por sesión, con su pizarra).
 - `models_cache` guarda la caché de modelos de Docling y HuggingFace para no descargarlos en cada arranque.
 - Para ver los datos desde el host, cambia `data_volume` por el bind mount `./data:/app/data`. El directorio debe ser escribible por el UID 10001, que es el usuario del contenedor.
 
