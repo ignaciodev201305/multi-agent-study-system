@@ -14,7 +14,9 @@ from config.settings import (
 
 MAX_TITLE_CHARS = 120
 MAX_PLOT_MARKS = 12
-BLOCK_METADATA = {"id", "author", "title"}
+MAX_EXERCISE_HINTS = 5
+TOPIC_FIELDS = ("topic_number", "topic")
+BLOCK_METADATA = {"id", "author", "title", *TOPIC_FIELDS}
 
 
 class BoardError(ValueError):
@@ -105,8 +107,16 @@ class PlotBlock(_BoardModel):
         return self
 
 
+class ExerciseBlock(_BoardModel):
+    """Ejercicio de práctica; la solución se oculta solo en la interfaz."""
+    kind: Literal["exercise"]
+    statement: str = Field(min_length=1)
+    hints: list[str] | None = Field(default=None, max_length=MAX_EXERCISE_HINTS)
+    solution: str = Field(min_length=1)
+
+
 BoardBlock = Annotated[
-    MarkdownBlock | MathBlock | StepsBlock | TableBlock | CodeBlock | PlotBlock,
+    MarkdownBlock | MathBlock | StepsBlock | TableBlock | CodeBlock | PlotBlock | ExerciseBlock,
     Field(discriminator="kind"),
 ]
 
@@ -165,6 +175,8 @@ def _duplicate_key(block: dict) -> dict:
     if key["kind"] == "plot":
         expressions = sorted(function["expression"] for function in key["functions"])
         return {"kind": "plot", "expressions": expressions, "x_min": key["x_min"], "x_max": key["x_max"]}
+    if key["kind"] == "exercise":
+        return {"kind": "exercise", "statement": _fold(key["statement"])}
     if key["kind"] == "markdown":
         key["text"] = _fold(key["text"])
     elif key["kind"] == "steps":
@@ -202,6 +214,7 @@ def add_block(
     author: str,
     title: str | None = None,
     samples: list | None = None,
+    topic: tuple[int, str] | None = None,
 ) -> dict:
     """Agrega un bloque con id del servidor y devuelve el parche."""
     validate_block(block)
@@ -216,6 +229,8 @@ def add_block(
     clean_title = _clean_title(title)
     if clean_title:
         stored["title"] = clean_title
+    if topic is not None:
+        stored.update(zip(TOPIC_FIELDS, topic))
     stored.update(content)
     board.next_id += 1
     board.blocks.append(stored)
@@ -235,7 +250,7 @@ def update_block(
     _check_ops(board)
     index = _find(board, block_id)
     current = board.blocks[index]
-    stored = {key: current[key] for key in ("id", "author", "title") if key in current}
+    stored = {key: current[key] for key in BLOCK_METADATA if key in current}
     clean_title = _clean_title(title)
     if clean_title:
         stored["title"] = clean_title

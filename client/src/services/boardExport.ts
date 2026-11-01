@@ -44,6 +44,10 @@ export const blockMarkdown = (block: BoardBlock): string => {
         .join('\n');
       return `Gráfico en x entre ${block.x_min} y ${block.x_max}:\n\n${functions}${marks ? `\n\nPuntos:\n\n${marks}` : ''}`;
     }
+    case 'exercise': {
+      const hints = (block.hints ?? []).map((hint, index) => `Pista ${index + 1}: ${hint}`);
+      return [block.statement, ...hints, `Solución: ${block.solution}`].join('\n\n');
+    }
   }
 };
 

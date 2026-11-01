@@ -50,6 +50,7 @@ async def board_add(
     block: BoardBlock,
     runtime: ToolRuntime[TurnContext],
     title: str | None = None,
+    topic_number: int | None = None,
 ) -> str:
     """Agrega un bloque a la pizarra que el alumno ve junto al chat y devuelve su id.
 
@@ -64,17 +65,28 @@ async def board_add(
       expression es una función de x con la sintaxis de la tool math, no LaTeX.
       points?: lista de {x, y, label?} para destacar raíces o máximos.
       vlines?: lista de valores de x para marcar asíntotas.
+    - exercise: statement, hints? (lista de hasta 5 pistas graduadas) y solution.
+      El alumno ve el enunciado y abre pistas y solución cuando quiere; no los repitas en el chat.
     title: título corto del bloque.
+    topic_number: número del tema en el TEMARIO, para agrupar el bloque; omítelo si no aplica.
     """
+    context = runtime.context
+    topic = None
+    if topic_number is not None:
+        name = context.topic_name(topic_number)
+        if name is None:
+            return f"Error: el tema {topic_number} no existe. Temario:\n{context.numbered_syllabus()}"
+        topic = (topic_number, name)
     try:
         validate_block(block)
         samples = await _sample_plot(block)
         patch = add_block(
-            runtime.context.board,
+            context.board,
             block,
-            author=runtime.context.author,
+            author=context.author,
             title=title,
             samples=samples,
+            topic=topic,
         )
     except BoardError as error:
         return f"Error: {error}"

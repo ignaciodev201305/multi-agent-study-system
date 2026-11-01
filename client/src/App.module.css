@@ -186,10 +186,28 @@
 
 .boardList { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 9px; padding: 11px 12px 16px; overflow: auto; }
 .boardBlock { display: flex; min-width: 0; flex: 0 0 auto; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 11px 11px; background: var(--surface); }
+.boardGroupBlocks { display: flex; min-width: 0; flex: 0 0 auto; flex-direction: column; gap: 9px; }
 @container (min-width: 620px) {
-  .boardList { display: grid; align-content: start; align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .boardBlock[data-kind='plot'], .boardBlock[data-kind='table'], .boardBlock[data-kind='code'], .boardBlock[data-kind='steps'] { grid-column: 1 / -1; }
+  .boardGroupBlocks { display: grid; align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .boardBlock[data-kind='plot'], .boardBlock[data-kind='table'], .boardBlock[data-kind='code'], .boardBlock[data-kind='steps'], .boardBlock[data-kind='exercise'] { grid-column: 1 / -1; }
 }
+.boardGroup { flex: 0 0 auto; }
+.boardGroup > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 2px 7px; color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 600; }
+.boardGroup > summary span { color: var(--subtle); font-size: 9px; font-weight: 400; }
+.boardFilters { display: flex; flex: 0 0 auto; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.boardFilters input, .boardFilters select { height: 26px; border: 1px solid var(--border-strong); border-radius: 5px; outline: 0; background: var(--surface); color: var(--text); font-size: 11px; }
+.boardFilters input { min-width: 0; flex: 1; padding: 0 8px; }
+.boardFilters input:focus, .boardFilters select:focus { border-color: var(--accent); }
+.boardExercise { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.boardExerciseHint, .boardExerciseSolution { border-left: 2px solid var(--border-strong); padding-left: 9px; }
+.boardExerciseSolution { border-left-color: var(--accent); }
+.boardExerciseHint > span, .boardExerciseSolution > span { color: var(--subtle); font-size: 9px; }
+.boardExercise textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 6px; outline: 0; padding: 6px 8px; background: var(--elevated); color: var(--text); font-size: 12px; resize: vertical; }
+.boardExercise textarea:focus { border-color: var(--accent); }
+.boardExerciseActions { display: flex; flex-wrap: wrap; gap: 4px; }
+.boardExerciseActions button { border: 1px solid var(--border); border-radius: 5px; padding: 3px 7px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; }
+.boardExerciseActions button:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+.boardExerciseActions button:disabled { cursor: default; opacity: .5; }
 .boardBlock .markdownContent { font-size: 12px; line-height: 1.65; }
 .boardBlock :global(.katex-display) { margin: 6px 0; overflow-x: auto; overflow-y: hidden; }
 .boardBlockHeader { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }

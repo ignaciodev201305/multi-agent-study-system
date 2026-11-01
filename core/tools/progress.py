@@ -21,12 +21,10 @@ async def record_progress(
     evidence: qué respondió o hizo que lo demuestra, en una frase.
     """
     context = runtime.context
-    syllabus = context.study_plan.syllabus if context.study_plan else []
-    if not 1 <= topic_number <= len(syllabus):
-        numbered = "\n".join(f"{index}. {item}" for index, item in enumerate(syllabus, start=1))
-        return f"Error: el tema {topic_number} no existe. Temario:\n{numbered}"
+    topic = context.topic_name(topic_number)
+    if topic is None:
+        return f"Error: el tema {topic_number} no existe. Temario:\n{context.numbered_syllabus()}"
 
-    topic = syllabus[topic_number - 1]
     # Conserva solo la última evaluación del tema en el turno.
     context.progress_updates[:] = [
         update for update in context.progress_updates if update["topic_number"] != topic_number

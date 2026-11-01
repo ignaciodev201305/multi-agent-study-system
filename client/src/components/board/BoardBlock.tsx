@@ -3,24 +3,25 @@ import { useState } from 'react';
 import type { BoardBlock as BoardBlockData } from '../../types';
 import { MarkdownMessage } from '../MarkdownMessage';
 import { CodeBlock } from './CodeBlock';
+import { ExerciseBlock } from './ExerciseBlock';
 import { PlotBlock } from './PlotBlock';
 import styles from '../../App.module.css';
 
 interface BlockContentProps {
   block: BoardBlockData;
   onOpenInPython: (code: string) => void;
+  onAskTutor: (message: string) => void;
 }
 
 interface BoardBlockProps extends BlockContentProps {
   highlighted: boolean;
-  onAskTutor: (message: string) => void;
 }
 
 const COPIED_MESSAGE_MS = 1500;
 
 const authorLabel = (author: string): string => author.replace(/_/g, ' ');
 
-function BlockContent({ block, onOpenInPython }: BlockContentProps): JSX.Element {
+function BlockContent({ block, onOpenInPython, onAskTutor }: BlockContentProps): JSX.Element {
   switch (block.kind) {
     case 'markdown':
       return <MarkdownMessage content={block.text} />;
@@ -70,6 +71,8 @@ function BlockContent({ block, onOpenInPython }: BlockContentProps): JSX.Element
       );
     case 'plot':
       return <PlotBlock block={block} title={block.title} />;
+    case 'exercise':
+      return <ExerciseBlock block={block} blockId={block.id} onAskTutor={onAskTutor} />;
   }
 }
 
@@ -100,7 +103,7 @@ export function BoardBlock({ block, highlighted, onOpenInPython, onAskTutor }: B
           <code className={styles.boardBlockId}>{block.id}</code>
         </span>
       </header>
-      <BlockContent block={block} onOpenInPython={onOpenInPython} />
+      <BlockContent block={block} onAskTutor={onAskTutor} onOpenInPython={onOpenInPython} />
       <footer className={styles.boardBlockActions}>
         <button onClick={() => void copy()} type="button">{copied ? 'Copiado' : 'Copiar'}</button>
         <button onClick={() => onAskTutor(`Sobre el bloque [[${block.id}]] de la pizarra: `)} type="button">

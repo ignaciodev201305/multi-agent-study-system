@@ -83,6 +83,10 @@ class ToolNamesTests(unittest.TestCase):
             self.assertLessEqual(set(archetype.tools), TOOL_NAMES, archetype.name)
         self.assertLessEqual(set(SUPERVISOR_TOOLS), TOOL_NAMES)
 
+    def test_exercises_belong_to_the_trainer(self):
+        self.assertIn("exercise", ARCHETYPES["entrenador_de_ejercicios"].prompt)
+        self.assertNotIn("exercise", ARCHETYPES["evaluador"].prompt)
+
     def test_evaluator_and_analyst_tools(self):
         self.assertIn("search_documents", ARCHETYPES["evaluador"].tools)
         self.assertIn("board_add", ARCHETYPES["analista_de_documentos"].tools)

@@ -91,12 +91,15 @@ export type BoardBlockContent =
     y_max?: number;
     points?: PlotMark[];
     vlines?: number[];
-  };
+  }
+  | { kind: 'exercise'; statement: string; hints?: string[]; solution: string };
 
 export type BoardBlock = BoardBlockContent & {
   id: string;
   author: string;
   title?: string;
+  topic_number?: number;
+  topic?: string;
 };
 
 // Cada pedido es un objeto nuevo para poder repetir el mismo bloque.

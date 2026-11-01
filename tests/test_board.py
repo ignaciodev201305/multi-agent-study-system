@@ -418,6 +418,49 @@ class BoardToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result.startswith("Error:"), arguments)
         self.assertEqual(runtime.events, [])
 
+    async def test_exercise_block(self):
+        runtime = _Runtime(TurnContext(session_id="s"))
+        exercise = _block(kind="exercise", statement="Deriva x^2", hints=["Usa la potencia"], solution="2x")
+        await board_add.coroutine(block=exercise, runtime=runtime)
+        self.assertEqual(runtime.context.board.blocks[0]["solution"], "2x")
+        again = _block(kind="exercise", statement="deriva  X^2", solution="otra")
+        self.assertIn("ya está", await board_add.coroutine(block=again, runtime=runtime))
+
+    def test_exercise_rejects_too_many_hints(self):
+        with self.assertRaises(ValidationError):
+            _block(kind="exercise", statement="a", solution="b", hints=["h"] * 6)
+
+    async def test_block_can_belong_to_a_topic(self):
+        plan = StudyPlan.model_validate({
+            "subject": "derivadas",
+            "syllabus": ["Definición", "Cadena"],
+            "archetypes": [{"archetype": "explicador", "focus": "Derivadas."}],
+            "supervisor_focus": "Guiar.",
+        })
+        runtime = _Runtime(TurnContext(session_id="s", study_plan=plan))
+        await board_add.coroutine(block=MATH, topic_number=2, runtime=runtime)
+        block = runtime.context.board.blocks[0]
+        self.assertEqual((block["topic_number"], block["topic"]), (2, "Cadena"))
+
+        new = _block(kind="markdown", text="nuevo")
+        await board_edit.coroutine(action="update", block_id="b1", block=new, runtime=runtime)
+        self.assertEqual(runtime.context.board.blocks[0]["topic"], "Cadena")
+
+        result = await board_add.coroutine(block=_block(kind="markdown", text="otro"), topic_number=9, runtime=runtime)
+        self.assertIn("2. Cadena", result)
+        self.assertEqual(len(runtime.context.board.blocks), 1)
+
+    async def test_same_content_in_other_topic_is_duplicate(self):
+        plan = StudyPlan.model_validate({
+            "subject": "derivadas",
+            "syllabus": ["Definición"],
+            "archetypes": [{"archetype": "explicador", "focus": "Derivadas."}],
+            "supervisor_focus": "Guiar.",
+        })
+        runtime = _Runtime(TurnContext(session_id="s", study_plan=plan))
+        await board_add.coroutine(block=MATH, runtime=runtime)
+        self.assertIn("ya está", await board_add.coroutine(block=MATH, topic_number=1, runtime=runtime))
+
     async def test_plot_keeps_marks(self):
         runtime = _Runtime(TurnContext(session_id="s"))
         plot = _block(

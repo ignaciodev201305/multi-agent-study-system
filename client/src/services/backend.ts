@@ -334,6 +334,9 @@ const isBoardBlock = (value: unknown): value is BoardBlock => {
         && Array.isArray(value.functions)
         && value.functions.every((item) => isRecord(item)
           && typeof item.expression === 'string' && Array.isArray(item.points));
+    case 'exercise':
+      return typeof value.statement === 'string' && typeof value.solution === 'string'
+        && (value.hints === undefined || isStringList(value.hints));
     default:
       return false;
   }
@@ -344,10 +347,12 @@ const parseBoard = (value: unknown): Board | undefined => {
   return { blocks: value.blocks.filter(isBoardBlock), revision: value.revision };
 };
 
-const parseBoardPatch = (value: object, content: string): BoardPatch | null => {
+const parseBoardPatch = (value: object, content: string): BackendEvent | null => {
   const { revision, op, block, block_id: blockId } = value as Record<string, unknown>;
   if (typeof revision !== 'number') return null;
   if (op === 'upsert' && isBoardBlock(block)) return { type: 'board_patch', content, revision, op, block };
+  // Un tipo desconocido no corta la sesión; el salto de revisión pide resincronizar.
+  if (op === 'upsert') return { type: 'status', content };
   if (op === 'remove' && typeof blockId === 'string') {
     return { type: 'board_patch', content, revision, op, block_id: blockId };
   }

@@ -80,7 +80,9 @@ ARCHETYPES = {
                 "Eres un entrenador de ejercicios. Propones ejercicios de dificultad creciente "
                 "(primero los del material del alumno si existen), dejas que el alumno los intente "
                 "y corriges su razonamiento señalando el paso exacto donde se equivoca. Verifica "
-                "siempre los resultados con la tool math antes de darlos por buenos."
+                "siempre los resultados con la tool math antes de darlos por buenos. Pon en la "
+                "pizarra los ejercicios para practicar como bloques exercise, con pistas graduadas "
+                "y solución verificada, y en tu respuesta cita el bloque sin revelar la solución."
             ),
             tools=("math", "get_study_material", "search_documents", "board_add"),
             tier="heavy",
