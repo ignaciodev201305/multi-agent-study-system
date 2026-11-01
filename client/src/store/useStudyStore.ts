@@ -123,6 +123,7 @@ interface PersistedState {
   theme: Theme;
   backendUrl: string;
   authToken: string;
+  docsPanelOpen: boolean;
   sidePanelOpen: boolean;
   sidePanelWidth: number;
   sidePanelTab: SidePanelTab;
@@ -139,6 +140,7 @@ interface StudyState extends PersistedState {
   boards: Record<string, Board | undefined>;
   usage: Record<string, UsageTotals | undefined>;
   composerDraft: ComposerDraft | null;
+  setDocsPanelOpen: (open: boolean) => void;
   setSidePanelOpen: (open: boolean) => void;
   setSidePanelWidth: (width: number) => void;
   setSidePanelTab: (tab: SidePanelTab) => void;
@@ -175,6 +177,7 @@ export const useStudyStore = create<StudyState>()(
       theme: 'dark',
       backendUrl: DEFAULT_BACKEND_URL,
       authToken: '',
+      docsPanelOpen: true,
       sidePanelOpen: true,
       sidePanelWidth: DEFAULT_SIDE_PANEL_WIDTH,
       sidePanelTab: 'board',
@@ -185,6 +188,7 @@ export const useStudyStore = create<StudyState>()(
       boards: {},
       usage: {},
       composerDraft: null,
+      setDocsPanelOpen: (docsPanelOpen) => set({ docsPanelOpen }),
       setSidePanelOpen: (sidePanelOpen) => set({ sidePanelOpen }),
       setSidePanelWidth: (sidePanelWidth) => set({ sidePanelWidth }),
       setSidePanelTab: (sidePanelTab) => set({ sidePanelTab }),
@@ -500,6 +504,7 @@ export const useStudyStore = create<StudyState>()(
         theme: state.theme,
         backendUrl: state.backendUrl,
         authToken: state.authToken,
+        docsPanelOpen: state.docsPanelOpen,
         sidePanelOpen: state.sidePanelOpen,
         sidePanelWidth: state.sidePanelWidth,
         sidePanelTab: state.sidePanelTab,

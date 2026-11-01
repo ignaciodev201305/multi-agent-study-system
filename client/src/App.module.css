@@ -102,8 +102,10 @@
 
 .appShell { position: relative; display: flex; min-height: 0; flex: 1; overflow: hidden; }
 
-.docsPanel { display: flex; flex: 0 0 268px; flex-direction: column; min-width: 0; padding: 15px 12px 14px; border-right: 1px solid var(--border); background: var(--sidebar); overflow: auto; }
+.docsPanel { display: flex; flex: 0 0 268px; flex-direction: column; min-width: 0; padding: 15px 12px 14px; border-right: 1px solid var(--border); background: var(--sidebar); overflow: auto; transition: flex-basis .18s ease, padding .18s ease, visibility .18s; }
+.docsPanel[data-closed] { flex-basis: 0; padding-right: 0; padding-left: 0; border-right-width: 0; visibility: hidden; overflow: hidden; }
 .docsHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 13px; }
+.docsHeaderActions { display: inline-flex; align-items: center; gap: 4px; }
 .docsTitle { font-size: 12px; font-weight: 650; letter-spacing: .01em; }
 .docsCount { border: 1px solid var(--border); border-radius: 20px; padding: 1px 8px; color: var(--muted); font-size: 10px; }
 
@@ -138,7 +140,7 @@
 .docMeta { color: var(--subtle); font-size: 9px; }
 .docsEmpty { margin: 6px 5px 0; color: var(--subtle); font-size: 11px; line-height: 1.6; }
 
-.workspace { display: flex; min-width: 420px; flex: 1; flex-direction: column; background: var(--surface); }
+.workspace { display: flex; min-width: 420px; flex: 1; container-type: inline-size; flex-direction: column; background: var(--surface); }
 .topbar { display: flex; height: 55px; flex: 0 0 55px; align-items: center; justify-content: space-between; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--border); }
 .topbarLeft { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .iconButton { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
@@ -152,6 +154,10 @@
 .themeButton { border: 1px solid transparent; border-radius: 5px; padding: 6px 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; white-space: nowrap; }
 .themeButton:hover { border-color: var(--border); color: var(--text); }
 .topbarActions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+@container (max-width: 640px) {
+  .phaseLabel, .usageContext, .usageBar { display: none; }
+  .topbar { padding-right: 12px; padding-left: 12px; }
+}
 .usageIndicator { display: flex; flex-direction: column; gap: 3px; border: 1px solid transparent; border-radius: 5px; padding: 4px 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .usageIndicator:hover { border-color: var(--border); color: var(--text); }
 .usageText { display: flex; align-items: center; gap: 5px; }
@@ -367,7 +373,8 @@
 
 @media (max-width: 1100px) {
   .usageContext, .usageBar { display: none; }
-  .studyPanel { position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: min(var(--study-panel-width, 348px), max(320px, calc(100% - 644px))); box-shadow: -10px 0 26px rgba(0, 0, 0, .24); }
+  .studyPanel { position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: min(var(--study-panel-width, 348px), max(320px, calc(100% - 688px))); box-shadow: -10px 0 26px rgba(0, 0, 0, .24); }
+  .appShell[data-docs-closed] .studyPanel { width: min(var(--study-panel-width, 348px), max(320px, calc(100% - 420px))); }
 }
 
 @media (max-width: 980px) {
@@ -383,5 +390,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .docsPanel { transition: none; }
   :global(*), :global(*::before), :global(*::after) { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }

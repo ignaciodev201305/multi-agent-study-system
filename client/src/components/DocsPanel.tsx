@@ -8,6 +8,8 @@ interface DocsPanelProps {
   backendUrl: string;
   documents: UploadedDocument[];
   locked?: boolean;
+  open: boolean;
+  onClose: () => void;
   onUploaded: (document: UploadedDocument) => void;
   // Procesar un documento gasta aunque falle.
   onProcessed: () => void;
@@ -27,7 +29,7 @@ const processingStatusText: Record<DocumentProcessingStatus, string> = {
   failed: 'Falló el procesamiento',
 };
 
-export function DocsPanel({ sessionId, backendUrl, documents, locked = false, onUploaded, onProcessed }: DocsPanelProps): JSX.Element {
+export function DocsPanel({ sessionId, backendUrl, documents, locked = false, open, onClose, onUploaded, onProcessed }: DocsPanelProps): JSX.Element {
   const fileInput = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [documentType, setDocumentType] = useState<DocumentType>('rag');
@@ -92,10 +94,17 @@ export function DocsPanel({ sessionId, backendUrl, documents, locked = false, on
   };
 
   return (
-    <aside className={styles.docsPanel}>
+    <aside className={styles.docsPanel} data-closed={open ? undefined : true}>
       <div className={styles.docsHeader}>
         <span className={styles.docsTitle}>Material</span>
-        <span className={styles.docsCount}>{documents.length}</span>
+        <span className={styles.docsHeaderActions}>
+          <span className={styles.docsCount}>{documents.length}</span>
+          <button aria-label="Cerrar material" className={styles.iconButton} onClick={onClose} title="Cerrar material" type="button">
+            <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
+              <path d="m4.5 4.5 7 7m0-7-7 7" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
+            </svg>
+          </button>
+        </span>
       </div>
 
       <div className={styles.uploadCard}>

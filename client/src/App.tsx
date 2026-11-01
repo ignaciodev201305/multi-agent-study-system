@@ -21,9 +21,11 @@ export default function App(): JSX.Element {
   const graphActivities = useStudyStore((state) => state.graphActivities[state.activeSessionId] ?? EMPTY_GRAPH_ACTIVITIES);
   const board = useStudyStore((state) => state.boards[state.activeSessionId] ?? EMPTY_BOARD);
   const usage = useStudyStore((state) => state.usage[state.activeSessionId]);
+  const docsPanelOpen = useStudyStore((state) => state.docsPanelOpen);
   const sidePanelOpen = useStudyStore((state) => state.sidePanelOpen);
   const sidePanelWidth = useStudyStore((state) => state.sidePanelWidth);
   const sidePanelTab = useStudyStore((state) => state.sidePanelTab);
+  const setDocsPanelOpen = useStudyStore((state) => state.setDocsPanelOpen);
   const setSidePanelOpen = useStudyStore((state) => state.setSidePanelOpen);
   const setSidePanelWidth = useStudyStore((state) => state.setSidePanelWidth);
   const setSidePanelTab = useStudyStore((state) => state.setSidePanelTab);
@@ -79,12 +81,14 @@ export default function App(): JSX.Element {
           backendUrl={backendUrl}
           board={board}
           composerDraft={composerDraft?.sessionId === activeSession.id ? composerDraft.content : undefined}
+          docsPanelOpen={docsPanelOpen}
           error={errors[activeSession.id]}
           graphActivities={graphActivities}
           isBusy={(connectionStates[activeSession.id] ?? 'idle') === 'connecting'}
           onBack={goHome}
           onComposerDraftApplied={clearComposerDraft}
           onDismissError={() => clearError(activeSession.id)}
+          onDocsPanelOpenChange={setDocsPanelOpen}
           onDocumentProcessed={() => void resyncSession(activeSession.id)}
           onOpenInPython={(code) => openInPython(activeSession.id, code)}
           onPythonCodeChange={(code) => setPythonCode(activeSession.id, code)}

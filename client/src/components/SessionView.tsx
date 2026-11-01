@@ -29,6 +29,7 @@ interface SessionViewProps {
   theme: Theme;
   board: Board;
   usage?: UsageTotals;
+  docsPanelOpen: boolean;
   sidePanelOpen: boolean;
   sidePanelWidth: number;
   sidePanelTab: SidePanelTab;
@@ -38,6 +39,7 @@ interface SessionViewProps {
   onBack: () => void;
   onSend: (content: string) => void;
   onDismissError: () => void;
+  onDocsPanelOpenChange: (open: boolean) => void;
   onUploaded: (document: UploadedDocument) => void;
   onDocumentProcessed: () => void;
   onSidePanelOpenChange: (open: boolean) => void;
@@ -65,6 +67,7 @@ export function SessionView({
   theme,
   board,
   usage,
+  docsPanelOpen,
   sidePanelOpen,
   sidePanelWidth,
   sidePanelTab,
@@ -74,6 +77,7 @@ export function SessionView({
   onBack,
   onSend,
   onDismissError,
+  onDocsPanelOpenChange,
   onUploaded,
   onDocumentProcessed,
   onSidePanelOpenChange,
@@ -100,13 +104,19 @@ export function SessionView({
   }, [focused, dialogOpen]);
 
   return (
-    <div className={styles.appShell} data-focused={focused ? true : undefined}>
+    <div
+      className={styles.appShell}
+      data-docs-closed={docsPanelOpen ? undefined : true}
+      data-focused={focused ? true : undefined}
+    >
       <DocsPanel
         backendUrl={backendUrl}
         documents={session.documents}
         locked={!session.messages.some((message) => message.role === 'user')}
+        onClose={() => onDocsPanelOpenChange(false)}
         onProcessed={onDocumentProcessed}
         onUploaded={onUploaded}
+        open={docsPanelOpen}
         sessionId={session.id}
       />
       <section className={styles.workspace}>
@@ -127,6 +137,16 @@ export function SessionView({
             <button className={styles.themeButton} onClick={() => setModelsOpen(true)} type="button">
               Modelos
             </button>
+            {!focused && (
+              <button
+                aria-expanded={docsPanelOpen}
+                className={styles.themeButton}
+                onClick={() => onDocsPanelOpenChange(!docsPanelOpen)}
+                type="button"
+              >
+                Material{session.documents.length > 0 ? ` (${session.documents.length})` : ''}
+              </button>
+            )}
             <button
               aria-expanded={sidePanelOpen}
               className={styles.themeButton}
