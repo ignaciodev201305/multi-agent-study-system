@@ -94,7 +94,7 @@ ARCHETYPES = {
                 "objetivo del alumno, corriges con criterio explícito y resumes qué temas domina y "
                 "en cuáles tiene dificultad."
             ),
-            tools=("math", "get_study_material", "board_add"),
+            tools=("math", "get_study_material", "search_documents", "board_add"),
             tier="light",
             temperature=0.2,
             techniques=("simulacro", "repeticion_espaciada"),
@@ -107,7 +107,7 @@ ARCHETYPES = {
                 "alumno: buscas los fragmentos relevantes, los explicas y citas documento y página. "
                 "Si los documentos no lo cubren, lo dices sin inventar."
             ),
-            tools=("search_documents", "get_study_material"),
+            tools=("search_documents", "get_study_material", "board_add"),
             tier="light",
             temperature=0.0,
             techniques=("informe_con_fuentes",),

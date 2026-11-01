@@ -418,6 +418,27 @@ class BoardToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result.startswith("Error:"), arguments)
         self.assertEqual(runtime.events, [])
 
+    async def test_get_board_reads_block_without_points(self):
+        runtime = _Runtime(TurnContext(session_id="s"))
+        plot = _block(kind="plot", functions=[{"expression": "x"}], x_min=0, x_max=1)
+        await board_add.coroutine(block=plot, title="Recta", runtime=runtime)
+        details = await get_board.coroutine(block_id="b1", runtime=runtime)
+        self.assertIn('"expression": "x"', details)
+        self.assertIn("Recta", details)
+        self.assertNotIn("points", details)
+        self.assertIn("points", runtime.context.board.blocks[0]["functions"][0])
+        self.assertIn("Error", await get_board.coroutine(block_id="b9", runtime=runtime))
+
+    async def test_board_edit_changes_title_only_when_sent(self):
+        runtime = _Runtime(TurnContext(session_id="s"))
+        await board_add.coroutine(block=MATH, title="Antes", runtime=runtime)
+        new = _block(kind="markdown", text="uno")
+        await board_edit.coroutine(action="update", block_id="b1", block=new, runtime=runtime)
+        self.assertEqual(runtime.context.board.blocks[0]["title"], "Antes")
+        new = _block(kind="markdown", text="dos")
+        await board_edit.coroutine(action="update", block_id="b1", block=new, title="  Después  ", runtime=runtime)
+        self.assertEqual(runtime.context.board.blocks[0]["title"], "Después")
+
     async def test_get_board(self):
         runtime = self.runtime()
         self.assertEqual(await get_board.coroutine(runtime=runtime), "La pizarra está vacía.")

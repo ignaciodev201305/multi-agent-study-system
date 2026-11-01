@@ -51,42 +51,71 @@ def format_pages(pages: str) -> str:
     return f"páginas {numbers[0]}-{numbers[-1]}"
 
 
+def _document_title(document: dict) -> str:
+    """Devuelve el título del resumen o, si falta, el nombre del archivo."""
+    return (document.get("summary") or {}).get("title") or document["original_filename"]
+
+
+def _select_documents(documents: list[dict], name: str | None) -> list[dict]:
+    """Filtra por una parte del título o del nombre del archivo, sin distinguir mayúsculas."""
+    if not name:
+        return documents
+    needle = name.strip().lower()
+    return [
+        document for document in documents
+        if needle in _document_title(document).lower() or needle in document["original_filename"].lower()
+    ]
+
+
+def _document_not_found(name: str, documents: list[dict]) -> str:
+    """Explica que no hay coincidencias y lista los documentos disponibles."""
+    available = ", ".join(_document_title(document) for document in documents)
+    return f"No hay un documento que coincida con '{name}'. Disponibles: {available}."
+
+
 @tool
-async def search_documents(query: str, runtime: ToolRuntime[TurnContext]) -> str:
+async def search_documents(query: str, runtime: ToolRuntime[TurnContext], document: str | None = None) -> str:
     """Busca fragmentos relevantes en los PDFs que el alumno subió como tipo rag.
 
     Úsala cuando pregunten por contenido específico de esos PDFs: definiciones, datos,
     ejemplos, ejercicios o citas. La consulta debe ser específica y en lenguaje natural;
     puedes llamarla más de una vez. Devuelve hasta 4 fragmentos con documento y página.
+    document limita la búsqueda a un PDF, por parte de su título o nombre de archivo.
     Si no hay resultados, dilo; no inventes contenido.
     """
     context = runtime.context
-    titles = {
-        document["document_id"]: (document.get("summary") or {}).get("title") or document["original_filename"]
-        for document in context.documents
-        if document["document_type"] == "rag"
-    }
-    if not titles:
+    rag_documents = [item for item in context.documents if item["document_type"] == "rag"]
+    if not rag_documents:
         return "No hay documentos rag indexados en esta sesión."
+    selected = _select_documents(rag_documents, document)
+    if not selected:
+        return _document_not_found(document, rag_documents)
+    titles = {item["document_id"]: _document_title(item) for item in rag_documents}
+    search_filter = {"session_id": context.session_id}
+    if document:
+        search_filter = {"$and": [
+            search_filter,
+            {"document_id": {"$in": [item["document_id"] for item in selected]}},
+        ]}
 
     store = await asyncio.to_thread(_get_vector_store, context.session_id)
     if store is None:
         return "No se pudieron consultar los PDFs en este momento."
     try:
-        documents = await asyncio.to_thread(
-            store.similarity_search, query, k=4, filter={"session_id": context.session_id}
+        fragments = await asyncio.to_thread(
+            store.similarity_search, query, k=4, filter=search_filter
         )
     except Exception:
         logger.exception("Falló la búsqueda en documentos session_id=%s", context.session_id)
         return "No se pudieron consultar los PDFs en este momento."
-    if not documents:
+    if not fragments:
         return "No se encontraron fragmentos relevantes."
 
     parts = []
-    for document in documents:
-        title = titles.get(document.metadata.get("document_id"), "documento")
-        pages = format_pages(document.metadata.get("pages", ""))
-        parts.append(f"<fragmento documento=\"{title}\" {pages}>\n{document.page_content}\n</fragmento>")
+    for fragment in fragments:
+        title = titles.get(fragment.metadata.get("document_id"), "documento")
+        pages = format_pages(fragment.metadata.get("pages", ""))
+        parts.append(f"<fragmento documento=\"{title}\" {pages}>\n{fragment.page_content}\n</fragmento>")
     return "\n\n".join(parts)
 
 
@@ -95,11 +124,13 @@ async def get_study_material(
     section: Literal["resumen", "temas", "formulas", "ejercicios", "conceptos"],
     runtime: ToolRuntime[TurnContext],
     number: int | None = None,
+    document: str | None = None,
 ) -> str:
     """Consulta los mapas de estudio de los PDFs del alumno (tipo study_map).
 
     section elige qué ver: resumen, temas, formulas, ejercicios o conceptos.
     number (desde 1) devuelve solo ese elemento, p. ej. el ejercicio 3.
+    document limita la consulta a un mapa, por parte de su título o nombre de archivo.
     """
     key = {
         "resumen": "summary",
@@ -109,16 +140,19 @@ async def get_study_material(
         "conceptos": "concepts",
     }[section]
     maps = [
-        document for document in runtime.context.documents
-        if document["document_type"] == "study_map" and document.get("summary")
+        item for item in runtime.context.documents
+        if item["document_type"] == "study_map" and item.get("summary")
     ]
     if not maps:
         return "No hay mapas de estudio en esta sesión."
+    selected = _select_documents(maps, document)
+    if not selected:
+        return _document_not_found(document, maps)
 
     parts = []
-    for document in maps:
-        summary = document["summary"]
-        title = summary.get("title") or document["original_filename"]
+    for item in selected:
+        summary = item["summary"]
+        title = _document_title(item)
         value = summary.get(key)
         if not value:
             parts.append(f"<material documento=\"{title}\">Sin {section}.</material>")

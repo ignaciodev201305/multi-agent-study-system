@@ -2,18 +2,26 @@
 
 import unittest
 from dataclasses import replace
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.documents import Document
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langgraph.errors import GraphInterrupt
 from pydantic import ValidationError
 
-from core.agents.builder import SupervisorBuilder
+from core.agents.builder import (
+    ADDED_BLOCKS_NOTE,
+    SPECIALIST_FAILED_NOTE,
+    SUPERVISOR_TOOLS,
+    SupervisorBuilder,
+    _subagent_tool,
+)
 from core.agents.catalog import ARCHETYPES, archetype_prompt, catalog_for_factory
 from core.prompts.context import STUDY_PLAN_PROMPT
 from core.schemas import StudyPlan
-from core.tools import TurnContext
+from core.tools import TOOL_NAMES, TurnContext
 from core.tools.documents import get_study_material, search_documents
 from core.tools.progress import record_progress
 
@@ -56,6 +64,28 @@ RAG_DOCUMENT = {
     "original_filename": "libro.pdf",
     "summary": {"title": "Cálculo I", "summary": "Libro."},
 }
+
+
+class _FailingModel(_ToolModel):
+    """Responde su guion y luego falla con el error indicado."""
+    error: BaseException
+
+    def _generate(self, *args, **kwargs):
+        try:
+            return super()._generate(*args, **kwargs)
+        except (StopIteration, RuntimeError):
+            raise self.error from None
+
+
+class ToolNamesTests(unittest.TestCase):
+    def test_catalog_only_uses_registered_tools(self):
+        for archetype in ARCHETYPES.values():
+            self.assertLessEqual(set(archetype.tools), TOOL_NAMES, archetype.name)
+        self.assertLessEqual(set(SUPERVISOR_TOOLS), TOOL_NAMES)
+
+    def test_evaluator_and_analyst_tools(self):
+        self.assertIn("search_documents", ARCHETYPES["evaluador"].tools)
+        self.assertIn("board_add", ARCHETYPES["analista_de_documentos"].tools)
 
 
 class StudyPlanTests(unittest.TestCase):
@@ -126,6 +156,52 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
         }])
         self.assertEqual(result["messages"][-1].content, "Aquí va la explicación del especialista.")
 
+    def supervisor_with_failing_specialist(self, error):
+        call = AIMessage(content="", tool_calls=[{
+            "name": "explicador",
+            "args": {"request": "Explica."},
+            "id": "call-1",
+        }])
+        supervisor_model = _ToolModel(messages=iter([call, AIMessage(content="Sigo yo.")]))
+        add_block = AIMessage(content="", tool_calls=[{
+            "name": "board_add",
+            "args": {"block": {"kind": "math", "latex": "x^2"}, "title": "Parcial"},
+            "id": "call-2",
+        }])
+        models = {
+            "supervisor": supervisor_model,
+            "subagent_light": _FailingModel(messages=iter([add_block]), error=error),
+        }
+        with (
+            patch("core.agents.builder.build_model", side_effect=lambda role, **_: models[role]),
+            patch("core.agents.builder.build_tools", side_effect=_tools_without_web),
+        ):
+            return SupervisorBuilder(_plan(archetypes=[{"archetype": "explicador", "focus": "Derivadas."}])).build()
+
+    async def test_failed_specialist_keeps_turn_and_blocks(self):
+        supervisor = self.supervisor_with_failing_specialist(RuntimeError("proveedor caído"))
+        context = TurnContext(session_id="s", study_plan=_plan())
+        with self.assertLogs("core.agents.builder", level="ERROR"):
+            result = await supervisor.ainvoke({"messages": [HumanMessage(content="hola")]}, context=context)
+
+        self.assertEqual(result["messages"][-1].content, "Sigo yo.")
+        note = next(message for message in result["messages"] if message.type == "tool").content
+        self.assertIn(SPECIALIST_FAILED_NOTE, note)
+        self.assertIn(ADDED_BLOCKS_NOTE, note)
+        self.assertIn("Parcial", note)
+        self.assertEqual(len(context.board.blocks), 1)
+
+    async def test_graph_interrupt_is_not_treated_as_failure(self):
+        agent = SimpleNamespace(ainvoke=AsyncMock(side_effect=GraphInterrupt(())))
+        with (
+            patch("core.agents.builder.build_model"),
+            patch("core.agents.builder.build_tools", return_value=[]),
+            patch("core.agents.builder.create_agent", return_value=agent),
+        ):
+            consult = _subagent_tool(ARCHETYPES["explicador"], "Derivadas.", {})
+        with self.assertRaises(GraphInterrupt):
+            await consult.coroutine(request="Explica.", runtime=_Runtime(TurnContext("s")))
+
     def test_system_prompt_includes_plan(self):
         prompt = SupervisorBuilder(_plan()).system_prompt()
         self.assertIn("1. Definición", prompt)
@@ -140,7 +216,11 @@ def _tools_without_web(names):
 
 
 class _FakeStore:
+    def __init__(self):
+        self.filters = []
+
     def similarity_search(self, query, k, filter):
+        self.filters.append(filter)
         return [Document(page_content="La derivada mide el cambio.", metadata={"document_id": "r1", "pages": "12,13"})]
 
 
@@ -204,6 +284,34 @@ class DocumentToolsTests(unittest.IsolatedAsyncioTestCase):
                 query="derivada", runtime=_Runtime(TurnContext("s", [RAG_DOCUMENT]))
             )
         self.assertIn('documento="Cálculo I" páginas 12-13', result)
+
+    async def test_search_filters_by_document(self):
+        other = {**RAG_DOCUMENT, "document_id": "r2", "original_filename": "fisica.pdf", "summary": {"title": "Física"}}
+        store = _FakeStore()
+        with patch("core.tools.documents._get_vector_store", return_value=store):
+            await search_documents.coroutine(
+                query="x", document="cálculo", runtime=_Runtime(TurnContext("s", [RAG_DOCUMENT, other]))
+            )
+            await search_documents.coroutine(query="x", runtime=_Runtime(TurnContext("s", [RAG_DOCUMENT, other])))
+        self.assertEqual(store.filters[0], {"$and": [{"session_id": "s"}, {"document_id": {"$in": ["r1"]}}]})
+        self.assertEqual(store.filters[1], {"session_id": "s"})
+
+    async def test_unknown_document_lists_available(self):
+        runtime = _Runtime(TurnContext("s", [RAG_DOCUMENT, STUDY_MAP]))
+        with patch("core.tools.documents._get_vector_store") as store:
+            result = await search_documents.coroutine(query="x", document="química", runtime=runtime)
+        store.assert_not_called()
+        self.assertIn("Cálculo I", result)
+        result = await get_study_material.coroutine(section="temas", document="química", runtime=runtime)
+        self.assertIn("No hay un documento", result)
+
+    async def test_study_material_filters_by_document(self):
+        other = {**STUDY_MAP, "original_filename": "otra.pdf", "summary": {"title": "Otra", "exercises": ["Integra x"]}}
+        result = await get_study_material.coroutine(
+            section="ejercicios", number=1, document="otra", runtime=_Runtime(TurnContext("s", [STUDY_MAP, other]))
+        )
+        self.assertIn("Integra x", result)
+        self.assertNotIn("Deriva x^2", result)
 
     async def test_search_without_rag_documents_does_not_touch_store(self):
         with patch("core.tools.documents._get_vector_store") as store:

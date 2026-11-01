@@ -17,6 +17,9 @@ _STATIC_TOOLS = {
     "get_board": get_board,
 }
 
+# Nombres válidos en el catálogo; web_search se crea al pedirla.
+TOOL_NAMES = frozenset({*_STATIC_TOOLS, "web_search"})
+
 
 def build_tools(names) -> list:
     """Instancia las tools pedidas; web_search se crea al pedirla (necesita TAVILY_API_KEY)."""
@@ -38,4 +41,4 @@ class ToolsBuilder:
         return build_web_tools()
 
 
-__all__ = ["TurnContext", "ToolsBuilder", "build_tools"]
+__all__ = ["TOOL_NAMES", "TurnContext", "ToolsBuilder", "build_tools"]

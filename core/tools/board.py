@@ -10,6 +10,7 @@ from core.board import (
     BoardError,
     PlotBlock,
     add_block,
+    block_details,
     board_inventory,
     clear,
     remove_block,
@@ -85,10 +86,12 @@ async def board_edit(
     runtime: ToolRuntime[TurnContext],
     block_id: str | None = None,
     block: BoardBlock | None = None,
+    title: str | None = None,
 ) -> str:
     """Corrige o borra bloques de la pizarra.
 
     - update: reemplaza el contenido de block_id por block, con el formato de board_add.
+      title cambia el título; si se omite, se conserva.
     - remove: borra block_id.
     - clear: vacía la pizarra; úsalo solo si el alumno lo pide o cambia de tema por completo.
     """
@@ -104,7 +107,7 @@ async def board_edit(
             return "Error: update necesita block con el contenido nuevo."
         else:
             validate_block(block)
-            patch = update_block(board, block_id, block, samples=await _sample_plot(block))
+            patch = update_block(board, block_id, block, title=title, samples=await _sample_plot(block))
     except BoardError as error:
         return f"Error: {error}"
     runtime.stream_writer(patch)
@@ -112,6 +115,15 @@ async def board_edit(
 
 
 @tool
-async def get_board(runtime: ToolRuntime[TurnContext]) -> str:
-    """Lista los bloques de la pizarra con id, tipo y título, sin su contenido."""
-    return board_inventory(runtime.context.board.blocks) or "La pizarra está vacía."
+async def get_board(runtime: ToolRuntime[TurnContext], block_id: str | None = None) -> str:
+    """Lista los bloques de la pizarra con id, tipo y título.
+
+    Con block_id devuelve el contenido de ese bloque; léelo antes de corregirlo con board_edit.
+    """
+    board = runtime.context.board
+    if block_id is None:
+        return board_inventory(board.blocks) or "La pizarra está vacía."
+    try:
+        return block_details(board, block_id)
+    except BoardError as error:
+        return f"Error: {error}"

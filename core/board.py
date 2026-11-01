@@ -1,5 +1,6 @@
 """Pizarra de la sesión: bloques validados y operaciones que devuelven el parche a emitir."""
 
+import json
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -172,6 +173,11 @@ def _check_duplicate(board: Board, content: dict) -> None:
             raise BoardError(f"Ese contenido ya está en la pizarra como {block['id']}: refiérete a ese bloque.")
 
 
+def _clean_title(title: str | None) -> str:
+    """Normaliza los espacios del título y lo acorta al máximo permitido."""
+    return " ".join((title or "").split())[:MAX_TITLE_CHARS]
+
+
 def _patch(board: Board, op: str, **fields) -> dict:
     """Cuenta la operación, avanza la revisión y arma el evento para el cliente."""
     board.ops_used += 1
@@ -197,7 +203,7 @@ def add_block(
             f"La pizarra llegó a {BOARD_MAX_BLOCKS} bloques: edita o borra bloques antes de agregar otro."
         )
     stored = {"id": f"b{board.next_id}", "author": author}
-    clean_title = " ".join((title or "").split())[:MAX_TITLE_CHARS]
+    clean_title = _clean_title(title)
     if clean_title:
         stored["title"] = clean_title
     stored.update(content)
@@ -206,13 +212,23 @@ def add_block(
     return _patch(board, "upsert", block=stored)
 
 
-def update_block(board: Board, block_id: str, block: BoardBlock, *, samples: list | None = None) -> dict:
-    """Reemplaza el contenido de un bloque conservando id, título y autor."""
+def update_block(
+    board: Board,
+    block_id: str,
+    block: BoardBlock,
+    *,
+    title: str | None = None,
+    samples: list | None = None,
+) -> dict:
+    """Reemplaza el contenido de un bloque; sin título nuevo conserva el actual."""
     validate_block(block)
     _check_ops(board)
     index = _find(board, block_id)
     current = board.blocks[index]
     stored = {key: current[key] for key in ("id", "author", "title") if key in current}
+    clean_title = _clean_title(title)
+    if clean_title:
+        stored["title"] = clean_title
     stored.update(_content(block, samples))
     board.blocks[index] = stored
     return _patch(board, "upsert", block=stored)
@@ -230,6 +246,18 @@ def clear(board: Board) -> dict:
     _check_ops(board)
     board.blocks = []
     return _patch(board, "clear")
+
+
+def block_details(board: Board, block_id: str) -> str:
+    """Devuelve el contenido de un bloque en JSON, sin los puntos de sus gráficos."""
+    block = board.blocks[_find(board, block_id)]
+    details = {key: value for key, value in block.items() if key != "functions"}
+    if "functions" in block:
+        details["functions"] = [
+            {key: value for key, value in function.items() if key != "points"}
+            for function in block["functions"]
+        ]
+    return json.dumps(details, ensure_ascii=False)
 
 
 def board_inventory(blocks: list[dict], limit: int | None = None) -> str:

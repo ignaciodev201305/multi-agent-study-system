@@ -1,10 +1,12 @@
 """Construcción del supervisor de una sesión: los subagentes se le exponen como tools."""
 
+import logging
 from dataclasses import replace
 
 from langchain.agents import create_agent
 from langchain.messages import HumanMessage
 from langchain.tools import ToolRuntime, tool
+from langgraph.errors import GraphBubbleUp
 
 from core.agents.catalog import ARCHETYPES, Archetype, archetype_prompt
 from core.board import board_inventory
@@ -13,6 +15,8 @@ from core.prompts.session import DOCUMENT_TOOL_RULES, MATH_FORMAT_RULE, SUPERVIS
 from core.schemas import StudyPlan
 from core.streaming import token_text
 from core.tools import TurnContext, build_tools
+
+logger = logging.getLogger(__name__)
 
 SUPERVISOR_TOOLS = (
     "search_documents",
@@ -23,6 +27,10 @@ SUPERVISOR_TOOLS = (
     "get_board",
 )
 ADDED_BLOCKS_NOTE = "Nota para el profesor (no la muestres al alumno): el especialista ya agregó a la pizarra:"
+SPECIALIST_FAILED_NOTE = (
+    "Nota para el profesor (no la muestres al alumno): el especialista no pudo responder. "
+    "Continúa con otro especialista o con una explicación breve propia."
+)
 
 
 def _subagent_tool(archetype: Archetype, focus: str, models: dict):
@@ -40,11 +48,18 @@ def _subagent_tool(archetype: Archetype, focus: str, models: dict):
     async def consult(request: str, runtime: ToolRuntime[TurnContext]) -> str:
         board = runtime.context.board
         known_ids = {block["id"] for block in board.blocks}
-        result = await subagent.ainvoke(
-            {"messages": [HumanMessage(content=request)]},
-            context=replace(runtime.context, author=archetype.name),
-        )
-        answer = token_text(result["messages"][-1].content)
+        try:
+            result = await subagent.ainvoke(
+                {"messages": [HumanMessage(content=request)]},
+                context=replace(runtime.context, author=archetype.name),
+            )
+            answer = token_text(result["messages"][-1].content)
+        except GraphBubbleUp:
+            # Las interrupciones del grafo no son fallos.
+            raise
+        except Exception:
+            logger.exception("Falló el especialista %s", archetype.name)
+            answer = SPECIALIST_FAILED_NOTE
         added = [block for block in board.blocks if block["id"] not in known_ids]
         if not added:
             return answer
