@@ -62,6 +62,8 @@ class NormalizeTests(unittest.TestCase):
             "supports_tools": True,
             "supports_reasoning": True,
             "supports_structured_output": False,
+            "supported_efforts": [],
+            "default_effort": None,
             "supports_temperature": False,
             "supports_text": True,
         })

@@ -48,8 +48,9 @@ def build_model(role: str, temperature: float | None = None, resolved: dict | No
     # Una capacidad desconocida se manda igual; solo se omite si consta que no existe.
     if resolved.get("supports_temperature") is not False:
         kwargs["temperature"] = spec["temperature"] if temperature is None else temperature
-    if spec["reasoning_effort"] and resolved.get("supports_reasoning") is not False:
-        kwargs["reasoning_effort"] = spec["reasoning_effort"]
+    effort = resolved["effort"] if "effort" in resolved else spec["reasoning_effort"]
+    if effort and resolved.get("supports_reasoning") is not False:
+        kwargs["reasoning_effort"] = effort
     try:
         return OpenRouterChat(**kwargs)
     except Exception:

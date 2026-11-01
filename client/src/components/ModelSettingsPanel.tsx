@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchModelSettings, updateModelSetting } from '../services/backend';
+import { fetchModelSettings, updateEffortSetting, updateModelSetting } from '../services/backend';
 import type { ModelRole, ModelSource, ResolvedModels } from '../types';
 import { ModelPicker } from './ModelPicker';
 import styles from '../App.module.css';
@@ -26,6 +26,21 @@ const sourceText: Record<ModelSource, string> = {
   env: 'Por defecto',
   default: 'Por defecto',
 };
+
+const effortText: Record<string, string> = {
+  none: 'Sin razonamiento',
+  minimal: 'Mínimo',
+  low: 'Bajo',
+  medium: 'Medio',
+  high: 'Alto',
+  xhigh: 'Muy alto',
+  max: 'Máximo',
+};
+
+// Estos niveles suelen generar muchos más tokens de salida.
+const COSTLY_EFFORTS = new Set(['xhigh', 'max']);
+
+const effortLabel = (effort: string): string => effortText[effort] ?? effort;
 
 const errorText = (reason: unknown, fallback: string): string => (reason instanceof Error ? reason.message : fallback);
 
@@ -67,6 +82,15 @@ export function ModelSettingsPanel({ backendUrl, sessionId, onClose }: ModelSett
     }
   };
 
+  const saveEffort = async (role: ModelRole, effort: string | null): Promise<void> => {
+    setError(null);
+    try {
+      setModels(await updateEffortSetting(backendUrl, sessionId, role, effort));
+    } catch (reason: unknown) {
+      setError(errorText(reason, 'No se pudo guardar el nivel de razonamiento.'));
+    }
+  };
+
   return (
     <div className={styles.modelOverlay} onClick={onClose} role="presentation">
       <section
@@ -91,6 +115,8 @@ export function ModelSettingsPanel({ backendUrl, sessionId, onClose }: ModelSett
         <ul className={styles.modelRoles}>
           {roles.map((role) => {
             const entry = models?.[role.id];
+            const ownEffort = entry?.effort_source === ownSource ? entry.effort : null;
+            const inheritedEffort = entry?.effort ?? entry?.default_effort;
             return (
               <li className={styles.modelRole} key={role.id}>
                 <div className={styles.modelRoleRow}>
@@ -111,6 +137,30 @@ export function ModelSettingsPanel({ backendUrl, sessionId, onClose }: ModelSett
                     )}
                   </div>
                 </div>
+                {entry && entry.supported_efforts.length > 0 && (
+                  <label className={styles.modelEffort}>
+                    <span>Razonamiento</span>
+                    <select
+                      onChange={(event) => void saveEffort(role.id, event.target.value || null)}
+                      value={ownEffort ?? ''}
+                    >
+                      <option value="">
+                        Por defecto{inheritedEffort ? ` (${effortLabel(inheritedEffort).toLowerCase()})` : ''}
+                      </option>
+                      {entry.supported_efforts.map((effort) => (
+                        <option key={effort} value={effort}>{effortLabel(effort)}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {entry?.effort && COSTLY_EFFORTS.has(entry.effort) && (
+                  <p className={styles.modelHint}>Este nivel puede costar bastante más.</p>
+                )}
+                {entry && entry.effort_unavailable.length > 0 && (
+                  <p className={styles.modelUnavailable}>
+                    Este modelo no admite: {entry.effort_unavailable.map(effortLabel).join(', ')}.
+                  </p>
+                )}
                 {entry && entry.unavailable.length > 0 && (
                   <p className={styles.modelUnavailable}>No disponible: {entry.unavailable.join(', ')}. Se usa el modelo indicado.</p>
                 )}

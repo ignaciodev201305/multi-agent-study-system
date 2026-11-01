@@ -24,6 +24,7 @@ from core.streaming import execute_astream_graph
 TOOLS_MODEL = "acme/con-tools"
 OTHER_TOOLS_MODEL = "acme/otro-con-tools"
 TEXT_MODEL = "acme/solo-texto"
+CATALOG_LIMITED = "acme/pocos-niveles"
 
 
 def _raw(model_id, *parameters):
@@ -31,9 +32,16 @@ def _raw(model_id, *parameters):
 
 
 CATALOG = [
-    normalize_model(_raw(TOOLS_MODEL, "tools", "temperature", "reasoning")),
+    normalize_model({
+        **_raw(TOOLS_MODEL, "tools", "temperature", "reasoning"),
+        "reasoning": {"supported_efforts": ["none", "low", "high"], "default_effort": "low"},
+    }),
     normalize_model(_raw(OTHER_TOOLS_MODEL, "tools")),
     normalize_model(_raw(TEXT_MODEL, "temperature")),
+    normalize_model({
+        **_raw(CATALOG_LIMITED, "tools", "reasoning"),
+        "reasoning": {"supported_efforts": ["low"], "default_effort": "low"},
+    }),
 ]
 
 
@@ -75,6 +83,80 @@ class RepositoryTests(_Base):
             self.assertEqual(await reopened.get("c"), {"summarizer": TEXT_MODEL})
         finally:
             await reopened.close()
+
+
+class EffortTests(_Base):
+    async def supervisor(self, chat_id="c"):
+        with patch.dict(MODEL_ROLES["supervisor"], {"reasoning_effort": None}):
+            return (await self.resolver.resolve(chat_id))["supervisor"]
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        await self.repository.set(GLOBAL_SCOPE, "supervisor", TOOLS_MODEL)
+
+    async def test_without_choice_model_uses_its_default(self):
+        entry = await self.supervisor()
+        self.assertIsNone(entry["effort"])
+        self.assertEqual(entry["effort_source"], "model")
+        self.assertEqual(entry["default_effort"], "low")
+        self.assertEqual(entry["supported_efforts"], ["none", "low", "high"])
+
+    async def test_session_beats_global(self):
+        await self.repository.set_effort(GLOBAL_SCOPE, "supervisor", "low")
+        entry = await self.supervisor()
+        self.assertEqual((entry["effort"], entry["effort_source"]), ("low", "global"))
+        await self.repository.set_effort("c", "supervisor", "high")
+        entry = await self.supervisor()
+        self.assertEqual((entry["effort"], entry["effort_source"]), ("high", "session"))
+        self.assertEqual((await self.supervisor("d"))["effort"], "low")
+
+    async def test_configured_effort_is_the_last_option(self):
+        with patch.dict(MODEL_ROLES["supervisor"], {"reasoning_effort": "high"}):
+            entry = (await self.resolver.resolve("c"))["supervisor"]
+        self.assertEqual((entry["effort"], entry["effort_source"]), ("high", "default"))
+        with patch.dict(MODEL_ROLES["supervisor"], {"reasoning_effort": "high"}), patch.dict(
+            "os.environ", {"REASONING_SUPERVISOR": "high"}
+        ):
+            self.assertEqual((await self.resolver.resolve("c"))["supervisor"]["effort_source"], "env")
+
+    async def test_effort_the_model_lacks_is_skipped_and_marked(self):
+        await self.repository.set_effort("c", "supervisor", "max")
+        await self.repository.set_effort(GLOBAL_SCOPE, "supervisor", "high")
+        entry = await self.supervisor()
+        self.assertEqual((entry["effort"], entry["effort_source"]), ("high", "global"))
+        self.assertEqual(entry["effort_unavailable"], ["max"])
+
+    async def test_changing_model_drops_unsupported_effort(self):
+        await self.repository.set_effort("c", "supervisor", "high")
+        await self.repository.set("c", "supervisor", CATALOG_LIMITED)
+        entry = await self.supervisor()
+        self.assertIsNone(entry["effort"])
+        self.assertEqual(entry["effort_unavailable"], ["high"])
+
+    async def test_without_catalog_choice_is_respected(self):
+        await self.repository.set_effort("c", "supervisor", "xhigh")
+        self.catalog.list_models.side_effect = CatalogUnavailable
+        self.assertEqual((await self.supervisor())["effort"], "xhigh")
+
+    async def test_check_effort(self):
+        await self.resolver.check_effort("c", "supervisor", "high")
+        with self.assertRaisesRegex(InvalidModel, "no admite"):
+            await self.resolver.check_effort("c", "supervisor", "max")
+        await self.repository.set("c", "supervisor", OTHER_TOOLS_MODEL)
+        with self.assertRaisesRegex(InvalidModel, "no admite"):
+            await self.resolver.check_effort("c", "supervisor", "high")
+
+    async def test_set_none_and_delete_chat(self):
+        await self.repository.set_effort("c", "supervisor", "high")
+        await self.repository.set_effort("d", "supervisor", "low")
+        await self.repository.set_effort(GLOBAL_SCOPE, "supervisor", "low")
+        await self.repository.set_effort("c", "summarizer", "low")
+        await self.repository.set_effort("c", "summarizer", None)
+        self.assertEqual(await self.repository.get_efforts("c"), {"supervisor": "high"})
+        await self.repository.delete_chat("c")
+        self.assertEqual(await self.repository.get_efforts("c"), {})
+        self.assertEqual(await self.repository.get_efforts("d"), {"supervisor": "low"})
+        self.assertEqual(await self.repository.get_efforts(GLOBAL_SCOPE), {"supervisor": "low"})
 
 
 class ResolutionTests(_Base):
@@ -169,6 +251,15 @@ class BuildModelTests(unittest.TestCase):
         self.assertNotIn("temperature", kwargs)
         self.assertNotIn("reasoning_effort", kwargs)
 
+    def test_resolved_effort_replaces_the_role_value(self):
+        self.assertEqual(self.kwargs(resolved={"model": TOOLS_MODEL, "effort": "high"})["reasoning_effort"], "high")
+
+    def test_none_effort_is_sent_as_a_level(self):
+        self.assertEqual(self.kwargs(resolved={"model": TOOLS_MODEL, "effort": "none"})["reasoning_effort"], "none")
+
+    def test_effort_without_usable_level_is_omitted(self):
+        self.assertNotIn("reasoning_effort", self.kwargs(resolved={"model": TOOLS_MODEL, "effort": None}))
+
     def test_unknown_capabilities_are_sent(self):
         kwargs = self.kwargs(resolved={
             "model": TOOLS_MODEL,
@@ -206,6 +297,14 @@ class SupervisorRebuildTests(unittest.TestCase):
             changed = self.graph._get_or_build_supervisor("s", "plan", self.models(OTHER_TOOLS_MODEL))
             self.assertIsNot(first, changed)
         self.assertEqual(len(self.graph.supervisors), 1)
+
+    def test_rebuilds_if_effort_changes(self):
+        with patch("core.graphs.session.SupervisorBuilder") as builder:
+            builder.return_value.build.side_effect = lambda: object()
+            models = {"supervisor": {"model": TOOLS_MODEL, "effort": "low"}}
+            first = self.graph._get_or_build_supervisor("s", "plan", models)
+            models = {"supervisor": {"model": TOOLS_MODEL, "effort": "high"}}
+            self.assertIsNot(first, self.graph._get_or_build_supervisor("s", "plan", models))
 
     def test_cached_lookup_ignores_stale_models(self):
         with patch("core.graphs.session.SupervisorBuilder") as builder:
@@ -332,10 +431,11 @@ class SettingsEndpointTests(unittest.TestCase):
     def setUp(self):
         app = FastAPI()
         app.include_router(routes.router)
-        self.settings = SimpleNamespace(set=AsyncMock(), delete_chat=AsyncMock())
+        self.settings = SimpleNamespace(set=AsyncMock(), set_effort=AsyncMock(), delete_chat=AsyncMock())
         self.resolver = SimpleNamespace(
             resolve=AsyncMock(return_value={"supervisor": {"model": TOOLS_MODEL}}),
             check_model=AsyncMock(),
+            check_effort=AsyncMock(),
         )
         app.state.model_settings = self.settings
         app.state.model_resolver = self.resolver
@@ -372,6 +472,30 @@ class SettingsEndpointTests(unittest.TestCase):
         response = self.client.put("/models/settings", json={"role": "supervisor", "model": TOOLS_MODEL})
         self.assertEqual(response.status_code, 503)
         self.settings.set.assert_not_awaited()
+
+    def test_global_and_session_effort_use_their_scope(self):
+        payload = {"role": "supervisor", "effort": "high"}
+        self.assertEqual(self.client.put("/models/effort", json=payload).status_code, 200)
+        self.resolver.check_effort.assert_awaited_with(None, "supervisor", "high")
+        self.settings.set_effort.assert_awaited_with(GLOBAL_SCOPE, "supervisor", "high")
+        self.assertEqual(self.client.put("/chats/thread/effort", json=payload).status_code, 200)
+        self.resolver.check_effort.assert_awaited_with("thread", "supervisor", "high")
+        self.settings.set_effort.assert_awaited_with("thread", "supervisor", "high")
+
+    def test_null_effort_removes_without_catalog(self):
+        response = self.client.put("/chats/thread/effort", json={"role": "supervisor", "effort": None})
+        self.assertEqual(response.status_code, 200)
+        self.resolver.check_effort.assert_not_awaited()
+        self.settings.set_effort.assert_awaited_once_with("thread", "supervisor", None)
+
+    def test_invalid_effort_is_not_saved(self):
+        self.resolver.check_effort.side_effect = InvalidModel("El modelo no admite ese nivel de razonamiento.")
+        for payload in ({"role": "supervisor", "effort": "max"}, {"role": "otro", "effort": "low"}):
+            self.assertEqual(self.client.put("/models/effort", json=payload).status_code, 422)
+        self.resolver.check_effort.side_effect = CatalogUnavailable
+        response = self.client.put("/models/effort", json={"role": "supervisor", "effort": "low"})
+        self.assertEqual(response.status_code, 503)
+        self.settings.set_effort.assert_not_awaited()
 
     def test_session_cannot_use_global_scope(self):
         with patch("api.routes.validate_chat_id"):

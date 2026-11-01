@@ -285,6 +285,22 @@ export const updateModelSetting = (
   'No se pudo guardar el modelo.',
 );
 
+export const updateEffortSetting = (
+  baseUrl: string,
+  sessionId: string | undefined,
+  role: ModelRole,
+  effort: string | null,
+): Promise<ResolvedModels> => requestModels(
+  sessionId ? `${chatUrl(baseUrl, sessionId)}/effort` : httpUrl(baseUrl, '/models/effort'),
+  {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, effort }),
+  },
+  'models',
+  'No se pudo guardar el nivel de razonamiento.',
+);
+
 export const deleteChat = async (baseUrl: string, sessionId: string): Promise<void> => {
   const target = chatUrl(baseUrl, sessionId);
 

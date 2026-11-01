@@ -48,6 +48,12 @@ async def _chat_usage(request: Request, chat_id: str) -> dict:
     )
 
 
+class EffortSelection(BaseModel):
+    """Nivel de razonamiento elegido para un rol; null quita el ajuste."""
+    role: str
+    effort: str | None = Field(default=None, min_length=1, max_length=20)
+
+
 @router.get("/chats/{chat_id}/messages")
 async def list_chat_messages_endpoint(chat_id: str, request: Request):
     """Devuelve el estado checkpointeado para que el cliente se resincronice al reconectar."""
@@ -146,6 +152,22 @@ async def _save_selection(request: Request, scope: str, selection: ModelSelectio
     await request.app.state.model_settings.set(scope, selection.role, selection.model)
 
 
+async def _save_effort(request: Request, scope: str, chat_id: str | None, selection: EffortSelection) -> None:
+    """Valida el nivel contra el modelo del rol y lo guarda."""
+    _check_role(selection.role)
+    if selection.effort is not None:
+        try:
+            await request.app.state.model_resolver.check_effort(chat_id, selection.role, selection.effort)
+        except InvalidModel as error:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error))
+        except CatalogUnavailable:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No se pudo consultar el catálogo de modelos.",
+            )
+    await request.app.state.model_settings.set_effort(scope, selection.role, selection.effort)
+
+
 @router.get("/models/settings")
 async def get_model_settings_endpoint(request: Request):
     """Devuelve el modelo efectivo de cada rol para las sesiones sin ajuste propio."""
@@ -156,6 +178,13 @@ async def get_model_settings_endpoint(request: Request):
 async def update_model_settings_endpoint(selection: ModelSelection, request: Request):
     """Cambia el modelo global de un rol."""
     await _save_selection(request, GLOBAL_SCOPE, selection)
+    return {"models": await request.app.state.model_resolver.resolve()}
+
+
+@router.put("/models/effort")
+async def update_global_effort_endpoint(selection: EffortSelection, request: Request):
+    """Cambia el nivel de razonamiento global de un rol."""
+    await _save_effort(request, GLOBAL_SCOPE, None, selection)
     return {"models": await request.app.state.model_resolver.resolve()}
 
 
@@ -171,6 +200,14 @@ async def update_chat_models_endpoint(chat_id: str, selection: ModelSelection, r
     """Cambia el modelo de un rol en una sesión; aplica desde el turno siguiente."""
     _check_session_scope(chat_id)
     await _save_selection(request, chat_id, selection)
+    return {"chat_id": chat_id, "models": await request.app.state.model_resolver.resolve(chat_id)}
+
+
+@router.put("/chats/{chat_id}/effort")
+async def update_chat_effort_endpoint(chat_id: str, selection: EffortSelection, request: Request):
+    """Cambia el nivel de razonamiento de un rol en una sesión; aplica desde el turno siguiente."""
+    _check_session_scope(chat_id)
+    await _save_effort(request, chat_id, chat_id, selection)
     return {"chat_id": chat_id, "models": await request.app.state.model_resolver.resolve(chat_id)}
 
 

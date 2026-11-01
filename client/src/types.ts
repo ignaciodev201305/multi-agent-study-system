@@ -119,6 +119,7 @@ export type BoardPatch =
 
 export type ModelRole = 'supervisor' | 'subagent_light' | 'subagent_heavy' | 'context_classifier' | 'factory' | 'summarizer';
 export type ModelSource = 'session' | 'global' | 'env' | 'default';
+export type EffortSource = ModelSource | 'model';
 
 export interface ModelInfo {
   id: string;
@@ -132,6 +133,12 @@ export interface ResolvedModel {
   model: string;
   source: ModelSource;
   unavailable: string[];
+  // Nulo si se usa el nivel por defecto del modelo.
+  effort: string | null;
+  effort_source: EffortSource;
+  effort_unavailable: string[];
+  supported_efforts: string[];
+  default_effort: string | null;
 }
 
 export type ResolvedModels = Record<ModelRole, ResolvedModel>;

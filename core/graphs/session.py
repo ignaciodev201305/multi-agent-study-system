@@ -33,7 +33,8 @@ SUPERVISOR_ROLES = ("supervisor", "subagent_light", "subagent_heavy")
 def models_fingerprint(models: dict | None) -> tuple:
     """Resume los modelos del supervisor para detectar si cambiaron."""
     models = models or {}
-    return tuple((models.get(role) or {}).get("model") for role in SUPERVISOR_ROLES)
+    entries = [models.get(role) or {} for role in SUPERVISOR_ROLES]
+    return tuple((entry.get("model"), entry.get("effort")) for entry in entries)
 
 
 class SessionStudyGraph:

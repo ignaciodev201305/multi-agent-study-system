@@ -42,6 +42,7 @@ def normalize_model(raw: dict) -> dict | None:
     parameters = raw.get("supported_parameters") or []
     pricing = raw.get("pricing") or {}
     output_modalities = (raw.get("architecture") or {}).get("output_modalities") or ["text"]
+    reasoning = raw.get("reasoning") or {}
     return {
         "id": model_id,
         "name": raw.get("name") or model_id,
@@ -51,6 +52,8 @@ def normalize_model(raw: dict) -> dict | None:
         "supports_tools": "tools" in parameters,
         "supports_reasoning": "reasoning" in parameters,
         "supports_structured_output": "structured_outputs" in parameters,
+        "supported_efforts": reasoning.get("supported_efforts") or [],
+        "default_effort": reasoning.get("default_effort"),
         "supports_temperature": "temperature" in parameters,
         "supports_text": "text" in output_modalities,
     }

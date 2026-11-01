@@ -57,6 +57,7 @@ Desde la interfaz se elige el modelo de cada rol entre los del catálogo de Open
 - El catálogo se guarda 1 h en memoria. Si OpenRouter falla, se usa la última copia. Las variantes `:batch` se excluyen, porque no responden en `chat/completions`.
 - Un cambio aplica desde el turno siguiente, y el supervisor se reconstruye si cambió alguno de sus modelos.
 - `temperature` y `reasoning_effort` se omiten en los modelos que no los soportan.
+- El nivel de razonamiento se elige por rol, con la misma prioridad que el modelo: sesión, global, `REASONING_<ROL>` y valor por defecto. El panel solo ofrece los niveles que el catálogo informa para ese modelo. Si un nivel guardado no existe en el modelo elegido, se prueba el siguiente; si ninguno sirve, no se envía y el modelo usa su nivel por defecto.
 - Si un modelo guardado desaparece del catálogo o deja de cumplir los requisitos, se usa el siguiente en la prioridad, queda en el log y la interfaz lo marca como no disponible.
 - Los embeddings quedan fuera del selector, porque cambiarlos invalidaría los vectores ya guardados.
 
@@ -65,6 +66,7 @@ Desde la interfaz se elige el modelo de cada rol entre los del catálogo de Open
 | `GET /models?role=&q=` | Modelos aptos para un rol, con precio por millón de tokens y contexto. |
 | `GET` y `PUT /models/settings` | Modelo efectivo de cada rol y ajuste global. |
 | `GET` y `PUT /chats/{id}/models` | Modelo efectivo de cada rol en una sesión y su ajuste. |
+| `PUT /models/effort` y `PUT /chats/{id}/effort` | Nivel de razonamiento de un rol, global o de la sesión. |
 
 El `PUT` recibe `{"role": "...", "model": "..."}`, valida contra el catálogo y con `model: null` quita el ajuste.
 
