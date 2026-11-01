@@ -549,7 +549,7 @@ class BoardStudyGraphTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.study_graph = StudyGraph()
         self.study_graph.context.chain_builder = SimpleNamespace(
-            build_chain=lambda *_: SimpleNamespace(ainvoke=AsyncMock(return_value=PLAN))
+            build_structured_chain=lambda *_, **__: SimpleNamespace(ainvoke=AsyncMock(return_value=PLAN))
         )
         self.database = Path(self.directory.name) / "study.db"
         checkpointer = await open_checkpointer(self.database)

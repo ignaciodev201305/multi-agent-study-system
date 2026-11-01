@@ -72,7 +72,7 @@ class StudyGraphTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.study_graph = StudyGraph()
         self.study_graph.context.chain_builder = SimpleNamespace(
-            build_chain=lambda *_: SimpleNamespace(ainvoke=AsyncMock(return_value=PLAN))
+            build_structured_chain=lambda *_, **__: SimpleNamespace(ainvoke=AsyncMock(return_value=PLAN))
         )
         checkpointer = await open_checkpointer(Path(self.directory.name) / "study.db")
         self.graph = await self.study_graph.compile_graph(checkpointer=checkpointer)

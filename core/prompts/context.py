@@ -60,7 +60,12 @@ Reglas:
 4. focus de cada especialista (máx. 80 palabras): tema, alcance y nivel con que trabaja en
    esta sesión; menciona qué NO le corresponde si se solapa con otro.
 5. supervisor_focus (máx. 120 palabras): nivel del alumno, objetivo y ritmo de la sesión.
-6. Usa comillas simples dentro de los textos, nunca dobles.
+"""
+
+# Solo para los modelos que no entregan salida estructurada.
+STUDY_PLAN_JSON_RULES = """
+6. Todas las claves y valores del JSON van entre comillas dobles. Si necesitas citar algo dentro
+   de un texto, usa comillas simples solo dentro de ese texto.
 
 Responde únicamente con JSON válido, sin texto adicional.
 

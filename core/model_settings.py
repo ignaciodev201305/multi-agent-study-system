@@ -134,6 +134,7 @@ class ModelResolver:
                 "unavailable": unavailable,
                 "supports_temperature": details.get("supports_temperature"),
                 "supports_reasoning": details.get("supports_reasoning"),
+                "supports_structured_output": details.get("supports_structured_output"),
             }
         return resolved
 

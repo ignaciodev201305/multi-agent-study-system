@@ -50,6 +50,7 @@ def normalize_model(raw: dict) -> dict | None:
         "completion_price": _price_per_million(pricing.get("completion")),
         "supports_tools": "tools" in parameters,
         "supports_reasoning": "reasoning" in parameters,
+        "supports_structured_output": "structured_outputs" in parameters,
         "supports_temperature": "temperature" in parameters,
         "supports_text": "text" in output_modalities,
     }

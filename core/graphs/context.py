@@ -9,9 +9,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from core.chain import ChainBuilder
-from core.llm import build_model, model_for_turn
+from core.llm import build_model, model_for_turn, turn_models
 from core.agents.catalog import catalog_for_factory
-from core.prompts.context import CONTEXT_CLASSIFIER_PROMPT, STUDY_PLAN_PROMPT
+from core.prompts.context import CONTEXT_CLASSIFIER_PROMPT, STUDY_PLAN_JSON_RULES, STUDY_PLAN_PROMPT
 from core.schemas import ContextClassification, StudyPlan
 from core.states import ContextStudyState
 from core.tools import ToolsBuilder
@@ -68,7 +68,15 @@ class ContextStudyGraph:
             context = "\n".join([session_objetive, session_context, previous_level])
 
             model = model_for_turn(config, "factory", self.factory_model)
-            chain = self.chain_builder.build_chain(model, STUDY_PLAN_PROMPT, StudyPlan)
+            resolved = (turn_models(config) or {}).get("factory") or {}
+            chain = self.chain_builder.build_structured_chain(
+                model,
+                STUDY_PLAN_PROMPT,
+                StudyPlan,
+                STUDY_PLAN_PROMPT + STUDY_PLAN_JSON_RULES,
+                # Una capacidad desconocida se intenta igual; el parser cubre el fallo.
+                native=resolved.get("supports_structured_output") is not False,
+            )
 
             response = await chain.ainvoke({"context": context, "catalog": catalog_for_factory()})
             return {"study_plan": response}

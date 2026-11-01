@@ -256,11 +256,11 @@ class ContextModelTests(unittest.IsolatedAsyncioTestCase):
             study_graph = StudyGraph()
         used = []
 
-        def build_chain(model, *_):
+        def build_structured_chain(model, *_, **__):
             used.append(model)
             return SimpleNamespace(ainvoke=AsyncMock(return_value=plan))
 
-        study_graph.context.chain_builder = SimpleNamespace(build_chain=build_chain)
+        study_graph.context.chain_builder = SimpleNamespace(build_structured_chain=build_structured_chain)
         checkpointer = await open_checkpointer(Path(directory.name) / "study.db")
         graph = await study_graph.compile_graph(checkpointer=checkpointer)
         self.addAsyncCleanup(checkpointer.conn.close)

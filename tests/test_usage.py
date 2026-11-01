@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain.messages import AIMessage, HumanMessage
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.outputs import ChatGeneration, LLMResult
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -49,6 +50,9 @@ class _ToolModel(GenericFakeChatModel):
 
     def bind_tools(self, tools, **kwargs):
         return self
+
+    def with_structured_output(self, schema, **kwargs):
+        return self | JsonOutputParser()
 
 
 def _fake_model(role, *messages):
