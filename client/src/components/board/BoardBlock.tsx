@@ -67,7 +67,7 @@ function BlockContent({ block, onOpenInPython }: BoardBlockProps): JSX.Element {
 
 export function BoardBlock({ block, onOpenInPython }: BoardBlockProps): JSX.Element {
   return (
-    <article className={styles.boardBlock}>
+    <article className={styles.boardBlock} data-kind={block.kind}>
       <header className={styles.boardBlockHeader}>
         <span className={styles.boardBlockTitle}>{block.title}</span>
         <span className={styles.boardBlockAuthor}>{authorLabel(block.author)}</span>

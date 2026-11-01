@@ -19,6 +19,7 @@ import type {
 } from '../types';
 
 const DEFAULT_BACKEND_URL = 'ws://127.0.0.1:8000';
+export const DEFAULT_SIDE_PANEL_WIDTH = 348;
 const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
 const MAX_PYTHON_CODE_CHARS = 20_000;
 const TURN_POLL_INTERVAL_MS = 3_000;
@@ -123,6 +124,7 @@ interface PersistedState {
   backendUrl: string;
   authToken: string;
   sidePanelOpen: boolean;
+  sidePanelWidth: number;
   sidePanelTab: SidePanelTab;
   pythonCode: Record<string, string | undefined>;
 }
@@ -138,6 +140,7 @@ interface StudyState extends PersistedState {
   usage: Record<string, UsageTotals | undefined>;
   composerDraft: ComposerDraft | null;
   setSidePanelOpen: (open: boolean) => void;
+  setSidePanelWidth: (width: number) => void;
   setSidePanelTab: (tab: SidePanelTab) => void;
   setPythonCode: (sessionId: string, code: string) => void;
   openInPython: (sessionId: string, code: string) => void;
@@ -173,6 +176,7 @@ export const useStudyStore = create<StudyState>()(
       backendUrl: DEFAULT_BACKEND_URL,
       authToken: '',
       sidePanelOpen: true,
+      sidePanelWidth: DEFAULT_SIDE_PANEL_WIDTH,
       sidePanelTab: 'board',
       pythonCode: {},
       connectionStates: {},
@@ -182,6 +186,7 @@ export const useStudyStore = create<StudyState>()(
       usage: {},
       composerDraft: null,
       setSidePanelOpen: (sidePanelOpen) => set({ sidePanelOpen }),
+      setSidePanelWidth: (sidePanelWidth) => set({ sidePanelWidth }),
       setSidePanelTab: (sidePanelTab) => set({ sidePanelTab }),
       setPythonCode: (sessionId, code) => set((state) => ({
         pythonCode: { ...state.pythonCode, [sessionId]: code.slice(0, MAX_PYTHON_CODE_CHARS) },
@@ -496,6 +501,7 @@ export const useStudyStore = create<StudyState>()(
         backendUrl: state.backendUrl,
         authToken: state.authToken,
         sidePanelOpen: state.sidePanelOpen,
+        sidePanelWidth: state.sidePanelWidth,
         sidePanelTab: state.sidePanelTab,
         pythonCode: state.pythonCode,
       }),

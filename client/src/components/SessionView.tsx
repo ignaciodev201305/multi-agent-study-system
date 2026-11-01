@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Composer } from './Composer';
 import { Conversation } from './Conversation';
 import { DocsPanel } from './DocsPanel';
@@ -30,6 +30,7 @@ interface SessionViewProps {
   board: Board;
   usage?: UsageTotals;
   sidePanelOpen: boolean;
+  sidePanelWidth: number;
   sidePanelTab: SidePanelTab;
   pythonCode: string;
   composerDraft?: string;
@@ -41,6 +42,7 @@ interface SessionViewProps {
   onDocumentProcessed: () => void;
   onSidePanelOpenChange: (open: boolean) => void;
   onSidePanelTabChange: (tab: SidePanelTab) => void;
+  onSidePanelWidthChange: (width: number) => void;
   onPythonCodeChange: (code: string) => void;
   onOpenInPython: (code: string) => void;
   onShareWithTutor: (message: string) => void;
@@ -64,6 +66,7 @@ export function SessionView({
   board,
   usage,
   sidePanelOpen,
+  sidePanelWidth,
   sidePanelTab,
   pythonCode,
   composerDraft,
@@ -75,6 +78,7 @@ export function SessionView({
   onDocumentProcessed,
   onSidePanelOpenChange,
   onSidePanelTabChange,
+  onSidePanelWidthChange,
   onPythonCodeChange,
   onOpenInPython,
   onShareWithTutor,
@@ -82,9 +86,21 @@ export function SessionView({
 }: SessionViewProps): JSX.Element {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
+  const [panelExpanded, setPanelExpanded] = useState(false);
+  const focused = panelExpanded && sidePanelOpen;
+  const dialogOpen = modelsOpen || usageOpen;
+
+  useEffect(() => {
+    if (!focused || dialogOpen) return undefined;
+    const handleKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setPanelExpanded(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [focused, dialogOpen]);
 
   return (
-    <div className={styles.appShell}>
+    <div className={styles.appShell} data-focused={focused ? true : undefined}>
       <DocsPanel
         backendUrl={backendUrl}
         documents={session.documents}
@@ -146,17 +162,24 @@ export function SessionView({
         <StudySidePanel
           backendUrl={backendUrl}
           board={board}
+          focused={focused}
           isBusy={isBusy}
           key={session.id}
-          onClose={() => onSidePanelOpenChange(false)}
+          onClose={() => {
+            setPanelExpanded(false);
+            onSidePanelOpenChange(false);
+          }}
+          onFocusedChange={setPanelExpanded}
           onOpenInPython={onOpenInPython}
           onPythonCodeChange={onPythonCodeChange}
           onShareWithTutor={onShareWithTutor}
           onTabChange={onSidePanelTabChange}
+          onWidthChange={onSidePanelWidthChange}
           pythonCode={pythonCode}
           sessionId={session.id}
           tab={sidePanelTab}
           title={session.title}
+          width={sidePanelWidth}
         />
       )}
       {usageOpen && (

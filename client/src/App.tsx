@@ -22,8 +22,10 @@ export default function App(): JSX.Element {
   const board = useStudyStore((state) => state.boards[state.activeSessionId] ?? EMPTY_BOARD);
   const usage = useStudyStore((state) => state.usage[state.activeSessionId]);
   const sidePanelOpen = useStudyStore((state) => state.sidePanelOpen);
+  const sidePanelWidth = useStudyStore((state) => state.sidePanelWidth);
   const sidePanelTab = useStudyStore((state) => state.sidePanelTab);
   const setSidePanelOpen = useStudyStore((state) => state.setSidePanelOpen);
+  const setSidePanelWidth = useStudyStore((state) => state.setSidePanelWidth);
   const setSidePanelTab = useStudyStore((state) => state.setSidePanelTab);
   const pythonCode = useStudyStore((state) => state.pythonCode[state.activeSessionId] ?? '');
   const composerDraft = useStudyStore((state) => state.composerDraft);
@@ -90,12 +92,14 @@ export default function App(): JSX.Element {
           onShareWithTutor={(message) => setComposerDraft(activeSession.id, message)}
           onSidePanelOpenChange={setSidePanelOpen}
           onSidePanelTabChange={setSidePanelTab}
+          onSidePanelWidthChange={setSidePanelWidth}
           onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           onUploaded={(document) => addDocument(activeSession.id, document)}
           pythonCode={pythonCode}
           session={activeSession}
           sidePanelOpen={sidePanelOpen}
           sidePanelTab={sidePanelTab}
+          sidePanelWidth={sidePanelWidth}
           status={connectionStates[activeSession.id] ?? 'idle'}
           theme={theme}
           usage={usage}
