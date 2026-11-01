@@ -194,7 +194,15 @@
 .boardBlock :global(.katex-display) { margin: 6px 0; overflow-x: auto; overflow-y: hidden; }
 .boardBlockHeader { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .boardBlockTitle { min-width: 0; font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
-.boardBlockAuthor { flex: 0 0 auto; color: var(--subtle); font-size: 9px; }
+.boardBlockAuthor { color: var(--subtle); font-size: 9px; }
+.boardBlockMeta { display: inline-flex; flex: 0 0 auto; align-items: baseline; gap: 6px; }
+.boardBlockId { color: var(--subtle); font-family: "IBM Plex Mono", monospace; font-size: 9px; }
+.boardBlock[data-highlighted] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.boardBlockActions { display: flex; justify-content: flex-end; gap: 2px; }
+.boardBlockActions button { border: 0; border-radius: 4px; padding: 2px 5px; background: transparent; color: var(--subtle); cursor: pointer; font-size: 9px; }
+.boardBlockActions button:hover { background: var(--elevated-hover); color: var(--text); }
+.blockLink { border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 4px; background: var(--accent-soft); color: var(--accent); cursor: pointer; font-family: "IBM Plex Mono", monospace; font-size: .85em; }
+.blockLink:hover { border-color: var(--accent); }
 .boardSteps { display: flex; flex-direction: column; gap: 7px; margin: 0; padding-left: 20px; font-size: 12px; }
 .boardSteps li::marker { color: var(--muted); }
 .boardTable { max-width: 100%; overflow: auto; }
@@ -214,6 +222,9 @@
 .plotGrid { stroke: var(--border); stroke-width: 1; }
 .plotAxis { stroke: var(--border-strong); stroke-width: 1; }
 .plotTick { fill: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+.plotAsymptote { stroke: var(--muted); stroke-dasharray: 4 3; stroke-width: 1; }
+.plotMark { fill: var(--text); stroke: var(--surface); stroke-width: 1.5; }
+.plotMarkLabel { fill: var(--text); font-size: 10px; }
 .plotLine { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
 .plotCrosshair { stroke: var(--muted); stroke-width: 1; }
 .plotDot { stroke: var(--surface); stroke-width: 2; }

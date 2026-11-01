@@ -1,4 +1,4 @@
-import { memo, useId, useMemo, useState } from 'react';
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent } from 'react';
 import type { BoardBlockContent, PlotFunction } from '../../types';
 import styles from '../../App.module.css';
@@ -15,12 +15,14 @@ interface Range {
   max: number;
 }
 
-const WIDTH = 320;
-const HEIGHT = 200;
+const MIN_WIDTH = 260;
+const MIN_HEIGHT = 200;
+const MAX_HEIGHT = 380;
+const HEIGHT_RATIO = 0.625;
 const MARGIN = { top: 8, right: 10, bottom: 20, left: 36 };
-const PLOT_WIDTH = WIDTH - MARGIN.left - MARGIN.right;
-const PLOT_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom;
-const TICK_COUNT = 5;
+const MIN_TICKS = 5;
+// Espacio aproximado que necesita cada marca del eje.
+const PIXELS_PER_TICK = 64;
 const PADDING_RATIO = 0.06;
 // Si el rango total supera este múltiplo del central, hay una asíntota aplastando la curva.
 const OUTLIER_RATIO = 5;
@@ -36,8 +38,8 @@ const formatNumber = (value: number): string => {
   return String(Number(value.toPrecision(4)));
 };
 
-const niceTicks = ({ min, max }: Range): number[] => {
-  const rawStep = (max - min) / TICK_COUNT;
+const niceTicks = ({ min, max }: Range, count: number): number[] => {
+  const rawStep = (max - min) / count;
   const power = 10 ** Math.floor(Math.log10(rawStep));
   const multiple = [1, 2, 5, 10].find((candidate) => candidate * power >= rawStep) ?? 10;
   const step = multiple * power;
@@ -85,15 +87,33 @@ const linePaths = (
 
 export const PlotBlock = memo(function PlotBlock({ block, title }: PlotBlockProps): JSX.Element {
   const clipId = `plot-${useId().replace(/:/g, '')}`;
+  const chart = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(MIN_WIDTH);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const height = clamp(Math.round(width * HEIGHT_RATIO), MIN_HEIGHT, MAX_HEIGHT);
+  const plotWidth = width - MARGIN.left - MARGIN.right;
+  const plotHeight = height - MARGIN.top - MARGIN.bottom;
+  const xTicks = Math.max(MIN_TICKS, Math.floor(plotWidth / PIXELS_PER_TICK));
+  const yTicks = Math.max(MIN_TICKS, Math.floor(plotHeight / PIXELS_PER_TICK));
+
+  // Se dibuja al ancho real para que el texto y las líneas no crezcan con el panel.
+  useEffect(() => {
+    const element = chart.current;
+    if (!element) return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      setWidth(Math.max(MIN_WIDTH, Math.round(entry.contentRect.width)));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const xRange: Range = { min: block.x_min, max: block.x_max };
   const yRange = useMemo<Range>(() => {
     const automatic = autoRange(block.functions);
     return { min: block.y_min ?? automatic.min, max: block.y_max ?? automatic.max };
   }, [block.functions, block.y_min, block.y_max]);
 
-  const scaleX = (x: number): number => MARGIN.left + ((x - xRange.min) / (xRange.max - xRange.min)) * PLOT_WIDTH;
-  const scaleY = (y: number): number => MARGIN.top + ((yRange.max - y) / (yRange.max - yRange.min)) * PLOT_HEIGHT;
+  const scaleX = (x: number): number => MARGIN.left + ((x - xRange.min) / (xRange.max - xRange.min)) * plotWidth;
+  const scaleY = (y: number): number => MARGIN.top + ((yRange.max - y) / (yRange.max - yRange.min)) * plotHeight;
 
   const labels = block.functions.map((item) => item.label ?? item.expression);
   const pointCount = block.functions[0]?.points.length ?? 0;
@@ -103,46 +123,55 @@ export const PlotBlock = memo(function PlotBlock({ block, title }: PlotBlockProp
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>): void => {
     if (pointCount === 0) return;
     const bounds = event.currentTarget.getBoundingClientRect();
-    const position = ((event.clientX - bounds.left) / bounds.width) * WIDTH;
-    const ratio = clamp((position - MARGIN.left) / PLOT_WIDTH, 0, 1);
+    const position = ((event.clientX - bounds.left) / bounds.width) * width;
+    const ratio = clamp((position - MARGIN.left) / plotWidth, 0, 1);
     setHoverIndex(Math.round(ratio * (pointCount - 1)));
   };
 
   return (
     <figure className={styles.plot}>
-      <div className={styles.plotChart}>
+      <div className={styles.plotChart} ref={chart}>
         <svg
           aria-label={`Gráfico de ${labels.join(', ')} con x entre ${block.x_min} y ${block.x_max}`}
           onPointerLeave={() => setHoverIndex(null)}
           onPointerMove={handlePointerMove}
           role="img"
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          viewBox={`0 0 ${width} ${height}`}
         >
           <defs>
             <clipPath id={clipId}>
-              <rect height={PLOT_HEIGHT} width={PLOT_WIDTH} x={MARGIN.left} y={MARGIN.top} />
+              <rect height={plotHeight} width={plotWidth} x={MARGIN.left} y={MARGIN.top} />
             </clipPath>
           </defs>
-          {niceTicks(yRange).map((tick) => (
+          {niceTicks(yRange, yTicks).map((tick) => (
             <g key={tick}>
-              <line className={tick === 0 ? styles.plotAxis : styles.plotGrid} x1={MARGIN.left} x2={WIDTH - MARGIN.right} y1={scaleY(tick)} y2={scaleY(tick)} />
+              <line className={tick === 0 ? styles.plotAxis : styles.plotGrid} x1={MARGIN.left} x2={width - MARGIN.right} y1={scaleY(tick)} y2={scaleY(tick)} />
               <text className={styles.plotTick} textAnchor="end" x={MARGIN.left - 5} y={scaleY(tick) + 3}>{formatNumber(tick)}</text>
             </g>
           ))}
-          {niceTicks(xRange).map((tick) => (
+          {niceTicks(xRange, xTicks).map((tick) => (
             <g key={tick}>
-              {tick === 0 && <line className={styles.plotAxis} x1={scaleX(0)} x2={scaleX(0)} y1={MARGIN.top} y2={HEIGHT - MARGIN.bottom} />}
-              <text className={styles.plotTick} textAnchor="middle" x={scaleX(tick)} y={HEIGHT - 6}>{formatNumber(tick)}</text>
+              {tick === 0 && <line className={styles.plotAxis} x1={scaleX(0)} x2={scaleX(0)} y1={MARGIN.top} y2={height - MARGIN.bottom} />}
+              <text className={styles.plotTick} textAnchor="middle" x={scaleX(tick)} y={height - 6}>{formatNumber(tick)}</text>
             </g>
           ))}
           <g clipPath={`url(#${clipId})`}>
+            {block.vlines?.map((x) => (
+              <line className={styles.plotAsymptote} key={x} x1={scaleX(x)} x2={scaleX(x)} y1={MARGIN.top} y2={height - MARGIN.bottom} />
+            ))}
             {block.functions.map((item, index) => (
               <path className={styles.plotLine} d={linePaths(item, yRange, scaleX, scaleY)} key={index} style={{ stroke: `var(--series-${index + 1})` }} />
+            ))}
+            {block.points?.map((point, index) => (
+              <g key={index}>
+                <circle className={styles.plotMark} cx={scaleX(point.x)} cy={scaleY(point.y)} r={3.5} />
+                {point.label && <text className={styles.plotMarkLabel} x={scaleX(point.x) + 6} y={scaleY(point.y) - 6}>{point.label}</text>}
+              </g>
             ))}
           </g>
           {hoverIndex !== null && hoverX !== undefined && (
             <g>
-              <line className={styles.plotCrosshair} x1={scaleX(hoverX)} x2={scaleX(hoverX)} y1={MARGIN.top} y2={HEIGHT - MARGIN.bottom} />
+              <line className={styles.plotCrosshair} x1={scaleX(hoverX)} x2={scaleX(hoverX)} y1={MARGIN.top} y2={height - MARGIN.bottom} />
               {block.functions.map((item, index) => {
                 const y = item.points[hoverIndex]?.[1];
                 if (y === null || y === undefined || y < yRange.min || y > yRange.max) return null;
@@ -154,8 +183,8 @@ export const PlotBlock = memo(function PlotBlock({ block, title }: PlotBlockProp
         {hoverIndex !== null && hoverX !== undefined && (
           <div
             className={styles.plotTooltip}
-            data-side={scaleX(hoverX) > WIDTH / 2 ? 'left' : 'right'}
-            style={{ left: `${(scaleX(hoverX) / WIDTH) * 100}%` }}
+            data-side={scaleX(hoverX) > width / 2 ? 'left' : 'right'}
+            style={{ left: `${(scaleX(hoverX) / width) * 100}%` }}
           >
             <div className={styles.plotTooltipTitle}>x = {formatNumber(hoverX)}</div>
             {block.functions.map((item, index) => {

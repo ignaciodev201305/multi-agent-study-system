@@ -1,18 +1,26 @@
-import { mathMarkdown } from '../../services/boardExport';
+import { blockMarkdown, mathMarkdown } from '../../services/boardExport';
+import { useState } from 'react';
 import type { BoardBlock as BoardBlockData } from '../../types';
 import { MarkdownMessage } from '../MarkdownMessage';
 import { CodeBlock } from './CodeBlock';
 import { PlotBlock } from './PlotBlock';
 import styles from '../../App.module.css';
 
-interface BoardBlockProps {
+interface BlockContentProps {
   block: BoardBlockData;
   onOpenInPython: (code: string) => void;
 }
 
+interface BoardBlockProps extends BlockContentProps {
+  highlighted: boolean;
+  onAskTutor: (message: string) => void;
+}
+
+const COPIED_MESSAGE_MS = 1500;
+
 const authorLabel = (author: string): string => author.replace(/_/g, ' ');
 
-function BlockContent({ block, onOpenInPython }: BoardBlockProps): JSX.Element {
+function BlockContent({ block, onOpenInPython }: BlockContentProps): JSX.Element {
   switch (block.kind) {
     case 'markdown':
       return <MarkdownMessage content={block.text} />;
@@ -65,14 +73,40 @@ function BlockContent({ block, onOpenInPython }: BoardBlockProps): JSX.Element {
   }
 }
 
-export function BoardBlock({ block, onOpenInPython }: BoardBlockProps): JSX.Element {
+export function BoardBlock({ block, highlighted, onOpenInPython, onAskTutor }: BoardBlockProps): JSX.Element {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(blockMarkdown(block));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), COPIED_MESSAGE_MS);
+    } catch {
+      setCopied(false);
+    }
+  };
+
   return (
-    <article className={styles.boardBlock} data-kind={block.kind}>
+    <article
+      className={styles.boardBlock}
+      data-block-id={block.id}
+      data-highlighted={highlighted ? true : undefined}
+      data-kind={block.kind}
+    >
       <header className={styles.boardBlockHeader}>
         <span className={styles.boardBlockTitle}>{block.title}</span>
-        <span className={styles.boardBlockAuthor}>{authorLabel(block.author)}</span>
+        <span className={styles.boardBlockMeta}>
+          <span className={styles.boardBlockAuthor}>{authorLabel(block.author)}</span>
+          <code className={styles.boardBlockId}>{block.id}</code>
+        </span>
       </header>
       <BlockContent block={block} onOpenInPython={onOpenInPython} />
+      <footer className={styles.boardBlockActions}>
+        <button onClick={() => void copy()} type="button">{copied ? 'Copiado' : 'Copiar'}</button>
+        <button onClick={() => onAskTutor(`Sobre el bloque [[${block.id}]] de la pizarra: `)} type="button">
+          Preguntar al tutor
+        </button>
+      </footer>
     </article>
   );
 }

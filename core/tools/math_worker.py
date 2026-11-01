@@ -9,6 +9,9 @@ MAX_EXPRESSION_CHARS = 500
 MAX_NAME_CHARS = 20
 SAMPLE_MAX_POINTS = 300
 SAMPLE_MAX_ABS = 1e6
+MATRIX_MAX_SIZE = 6
+MATRIX_OPERATIONS = {"det", "inverse", "rank", "eigenvals"}
+SERIES_DEFAULT_ORDER = 6
 ALLOWED_CHARS = re.compile(r"[0-9A-Za-z_+\-*/^().,= ]*")
 ALLOWED_FUNCTIONS = {
     "sin", "cos", "tan", "cot", "sec", "csc", "asin", "acos", "atan", "sinh", "cosh", "tanh",
@@ -152,12 +155,47 @@ def _sample(target, symbol, x_min: float, x_max: float, points: int) -> list[lis
     return samples
 
 
+def _matrix(rows):
+    """Arma la matriz con celdas validadas una por una."""
+    import sympy
+
+    if not rows or not all(isinstance(row, list) and row for row in rows):
+        raise ValueError("La operación necesita matrix, una lista de filas.")
+    if len({len(row) for row in rows}) != 1:
+        raise ValueError("Todas las filas de la matriz deben tener el mismo largo.")
+    if len(rows) > MATRIX_MAX_SIZE or len(rows[0]) > MATRIX_MAX_SIZE:
+        raise ValueError(f"La matriz admite hasta {MATRIX_MAX_SIZE}x{MATRIX_MAX_SIZE}.")
+    return sympy.Matrix([[_parse(str(cell)) for cell in row] for row in rows])
+
+
+def _run_matrix(operation: str, rows) -> dict:
+    """Ejecuta una operación de álgebra lineal."""
+    import sympy
+
+    matrix = _matrix(rows)
+    if operation == "rank":
+        result = matrix.rank()
+    elif not matrix.is_square:
+        raise ValueError("La operación necesita una matriz cuadrada.")
+    elif operation == "det":
+        result = matrix.det()
+    elif operation == "inverse":
+        result = matrix.inv()
+    else:
+        result = matrix.eigenvals()
+    return {"result": str(result), "latex": sympy.latex(result)}
+
+
 def run(request: dict) -> dict:
     """Ejecuta la operación pedida y devuelve su resultado."""
     import sympy
 
     operation = request["operation"]
-    expression = request["expression"]
+    if operation in MATRIX_OPERATIONS:
+        return _run_matrix(operation, request.get("matrix"))
+    expression = request.get("expression")
+    if not expression:
+        raise ValueError("La operación necesita expression.")
     variable = sympy.Symbol(_check(request["variable"])) if request.get("variable") else None
 
     if operation == "simplify":
@@ -187,6 +225,18 @@ def run(request: dict) -> dict:
                 "latex": rf"\text{{No existe: }} {sympy.latex(left)} \text{{ por la izquierda, }} "
                          rf"{sympy.latex(right)} \text{{ por la derecha}}",
             }
+    elif operation == "series":
+        target = _parse(expression)
+        center = request.get("point")
+        order = int(request.get("order") or SERIES_DEFAULT_ORDER)
+        symbol = variable or _single_symbol(target)
+        result = sympy.series(target, symbol, _parse(str(center)) if center is not None else 0, order).removeO()
+    elif operation == "summation":
+        target = _parse(expression)
+        lower, upper = request.get("lower"), request.get("upper")
+        if lower is None or upper is None:
+            raise ValueError("summation necesita lower y upper.")
+        result = sympy.summation(target, (variable or _single_symbol(target), _parse(str(lower)), _parse(str(upper))))
     elif operation == "sample":
         target = _parse(expression)
         return {"result": _sample(

@@ -25,6 +25,7 @@ interface ConversationProps {
   graphActivities: GraphActivity[];
   error?: string;
   onDismissError: () => void;
+  onBlockLink: (blockId: string) => void;
 }
 
 export function Conversation({
@@ -35,6 +36,7 @@ export function Conversation({
   graphActivities,
   error,
   onDismissError,
+  onBlockLink,
 }: ConversationProps): JSX.Element {
   const scrollContainer = useRef<HTMLElement>(null);
   const latestActivity = graphActivities[graphActivities.length - 1];
@@ -89,7 +91,7 @@ export function Conversation({
                 </div>
               )}
               {message.role === 'assistant' ? (
-                <MarkdownMessage content={message.content} />
+                <MarkdownMessage content={message.content} onBlockLink={onBlockLink} />
               ) : message.role === 'system' ? (
                 <div className={styles.systemMessage}>{message.content}</div>
               ) : (

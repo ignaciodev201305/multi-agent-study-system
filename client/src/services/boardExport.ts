@@ -14,7 +14,7 @@ export const fenced = (language: string, text: string): string => {
   return `${fence}${language}\n${text}\n${fence}`;
 };
 
-const blockMarkdown = (block: BoardBlock): string => {
+export const blockMarkdown = (block: BoardBlock): string => {
   switch (block.kind) {
     case 'markdown':
       return block.text;
@@ -39,7 +39,10 @@ const blockMarkdown = (block: BoardBlock): string => {
       const functions = block.functions
         .map((item) => `- ${item.label ? `${item.label}: ` : ''}\`${item.expression}\``)
         .join('\n');
-      return `Gráfico en x entre ${block.x_min} y ${block.x_max}:\n\n${functions}`;
+      const marks = (block.points ?? [])
+        .map((point) => `- ${point.label ? `${point.label}: ` : ''}(${point.x}, ${point.y})`)
+        .join('\n');
+      return `Gráfico en x entre ${block.x_min} y ${block.x_max}:\n\n${functions}${marks ? `\n\nPuntos:\n\n${marks}` : ''}`;
     }
   }
 };

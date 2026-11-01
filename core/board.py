@@ -13,6 +13,7 @@ from config.settings import (
 )
 
 MAX_TITLE_CHARS = 120
+MAX_PLOT_MARKS = 12
 BLOCK_METADATA = {"id", "author", "title"}
 
 
@@ -76,6 +77,13 @@ class PlotFunction(_BoardModel):
     label: str | None = None
 
 
+class PlotMark(_BoardModel):
+    """Punto destacado de un gráfico."""
+    x: float
+    y: float
+    label: str | None = None
+
+
 class PlotBlock(_BoardModel):
     """Gráfico de una o más funciones de x."""
     kind: Literal["plot"]
@@ -84,6 +92,8 @@ class PlotBlock(_BoardModel):
     x_max: float
     y_min: float | None = None
     y_max: float | None = None
+    points: list[PlotMark] | None = Field(default=None, max_length=MAX_PLOT_MARKS)
+    vlines: list[float] | None = Field(default=None, max_length=MAX_PLOT_MARKS)
 
     @model_validator(mode="after")
     def _check_ranges(self) -> "PlotBlock":

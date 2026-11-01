@@ -418,6 +418,32 @@ class BoardToolTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result.startswith("Error:"), arguments)
         self.assertEqual(runtime.events, [])
 
+    async def test_plot_keeps_marks(self):
+        runtime = _Runtime(TurnContext(session_id="s"))
+        plot = _block(
+            kind="plot",
+            functions=[{"expression": "1/x"}],
+            x_min=-2,
+            x_max=2,
+            points=[{"x": 1, "y": 1, "label": "A"}],
+            vlines=[0],
+        )
+        await board_add.coroutine(block=plot, runtime=runtime)
+        stored = runtime.context.board.blocks[0]
+        self.assertEqual(stored["points"], [{"x": 1.0, "y": 1.0, "label": "A"}])
+        self.assertEqual(stored["vlines"], [0.0])
+
+    async def test_plot_without_marks_omits_fields(self):
+        runtime = _Runtime(TurnContext(session_id="s"))
+        await board_add.coroutine(
+            block=_block(kind="plot", functions=[{"expression": "x"}], x_min=0, x_max=1), runtime=runtime
+        )
+        self.assertNotIn("vlines", runtime.context.board.blocks[0])
+
+    def test_plot_rejects_too_many_marks(self):
+        with self.assertRaises(ValidationError):
+            _block(kind="plot", functions=[{"expression": "x"}], x_min=0, x_max=1, vlines=[0] * 13)
+
     async def test_get_board_reads_block_without_points(self):
         runtime = _Runtime(TurnContext(session_id="s"))
         plot = _block(kind="plot", functions=[{"expression": "x"}], x_min=0, x_max=1)

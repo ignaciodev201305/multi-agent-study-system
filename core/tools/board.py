@@ -62,6 +62,8 @@ async def board_add(
     - code: language (python o text) y code.
     - plot: functions, lista de {expression, label?}, con x_min, x_max, y_min? e y_max?.
       expression es una función de x con la sintaxis de la tool math, no LaTeX.
+      points?: lista de {x, y, label?} para destacar raíces o máximos.
+      vlines?: lista de valores de x para marcar asíntotas.
     title: título corto del bloque.
     """
     try:

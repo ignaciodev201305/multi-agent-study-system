@@ -4,7 +4,7 @@ import { BoardPanel } from './board/BoardPanel';
 import { ProgressPanel } from './ProgressPanel';
 import { PythonPanel } from './PythonPanel';
 import { DEFAULT_SIDE_PANEL_WIDTH } from '../store/useStudyStore';
-import type { Board, SidePanelTab } from '../types';
+import type { BlockFocus, Board, SidePanelTab } from '../types';
 import styles from '../App.module.css';
 
 interface StudySidePanelProps {
@@ -12,6 +12,7 @@ interface StudySidePanelProps {
   title: string;
   backendUrl: string;
   board: Board;
+  focusRequest: BlockFocus | null;
   isBusy: boolean;
   tab: SidePanelTab;
   pythonCode: string;
@@ -52,6 +53,7 @@ export function StudySidePanel({
   title,
   backendUrl,
   board,
+  focusRequest,
   isBusy,
   tab,
   pythonCode,
@@ -167,7 +169,15 @@ export function StudySidePanel({
         </button>
       </header>
       <div className={styles.studyPanelBody} role="tabpanel">
-        {tab === 'board' && <BoardPanel board={board} onOpenInPython={openInPython} title={title} />}
+        {tab === 'board' && (
+          <BoardPanel
+            board={board}
+            focusRequest={focusRequest}
+            onAskTutor={onShareWithTutor}
+            onOpenInPython={openInPython}
+            title={title}
+          />
+        )}
         {tab === 'progress' && <ProgressPanel backendUrl={backendUrl} isBusy={isBusy} sessionId={sessionId} />}
         {/* Sigue montado para no perder la ejecución al cambiar de pestaña. */}
         <PythonPanel

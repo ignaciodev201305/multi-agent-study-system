@@ -38,7 +38,8 @@ TECHNIQUES = {
 
 BOARD_RULE = (
     "PIZARRA: usa board_add solo para lo que el alumno consultará después (fórmulas, pasos, "
-    "tablas y gráficos). No dupliques tu respuesta ni escribas mensajes conversacionales en ella."
+    "tablas y gráficos). No dupliques tu respuesta ni escribas mensajes conversacionales en ella. "
+    "Para citar un bloque, escribe su id entre corchetes dobles, como [[b3]]."
 )
 
 

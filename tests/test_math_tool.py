@@ -33,6 +33,50 @@ class MathToolTests(unittest.IsolatedAsyncioTestCase):
         result = await self.call(operation="evaluate", expression="x*y", substitutions="x=2, y=1/4")
         self.assertIn("0.5", result)
 
+    async def test_series(self):
+        result = await self.call(operation="series", expression="exp(x)", variable="x", order=3)
+        self.assertIn("x**2/2 + x + 1", result)
+
+    async def test_series_around_point(self):
+        result = await self.call(operation="series", expression="1/x", variable="x", point="1", order=2)
+        self.assertIn("2 - x", result.replace("(x - 1)", "x"))
+
+    async def test_summation(self):
+        result = await self.call(operation="summation", expression="1/n^2", variable="n", lower="1", upper="oo")
+        self.assertIn("pi**2/6", result)
+        self.assertIn("necesita lower", await self.call(operation="summation", expression="n", variable="n"))
+
+    async def test_matrix_operations(self):
+        matrix = [["1", "2"], ["3", 4]]
+        self.assertIn("Resultado: -2", await self.call(operation="det", matrix=matrix))
+        self.assertIn("Resultado: 2", await self.call(operation="rank", matrix=matrix))
+        self.assertIn("Matrix", await self.call(operation="inverse", matrix=matrix))
+        self.assertIn("{2: 1, 3: 1}", await self.call(operation="eigenvals", matrix=[[2, 0], [0, 3]]))
+        self.assertIn("x", await self.call(operation="det", matrix=[["x", 0], [0, 1]]))
+
+    async def test_matrix_rejects_invalid_shapes(self):
+        cases = [
+            (None, "necesita matrix"),
+            ([], "necesita matrix"),
+            ([[1, 2], [3]], "mismo largo"),
+            ([[1] * 7] * 7, "hasta 6x6"),
+            ([[1, 2, 3]], "cuadrada"),
+        ]
+        for matrix, message in cases:
+            with self.subTest(matrix=matrix):
+                self.assertIn(message, await self.call(operation="det", matrix=matrix))
+
+    async def test_matrix_cells_use_the_same_whitelist(self):
+        for cell in ("__import__('os')", "x[0]", "f(x)", "open(1)"):
+            with self.subTest(cell=cell):
+                self.assertIn("Error", await self.call(operation="det", matrix=[[cell]]))
+
+    async def test_brackets_stay_forbidden_in_expressions(self):
+        self.assertIn("no permitidos", await self.call(operation="simplify", expression="[1, 2]"))
+
+    async def test_expression_is_required_outside_matrix_operations(self):
+        self.assertIn("necesita expression", await self.call(operation="simplify"))
+
     async def test_limit(self):
         result = await self.call(operation="limit", expression="sin(x)/x", variable="x", point="0")
         self.assertIn("Resultado: 1", result)

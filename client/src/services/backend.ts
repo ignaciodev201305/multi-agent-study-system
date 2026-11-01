@@ -310,6 +310,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isStringList = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'string');
 
+const isPlotMark = (value: unknown): boolean =>
+  isRecord(value) && typeof value.x === 'number' && typeof value.y === 'number';
+
 const isBoardBlock = (value: unknown): value is BoardBlock => {
   if (!isRecord(value) || typeof value.id !== 'string' || typeof value.author !== 'string') return false;
   switch (value.kind) {
@@ -326,6 +329,8 @@ const isBoardBlock = (value: unknown): value is BoardBlock => {
       return typeof value.code === 'string' && (value.language === 'python' || value.language === 'text');
     case 'plot':
       return typeof value.x_min === 'number' && typeof value.x_max === 'number'
+        && (value.points === undefined || (Array.isArray(value.points) && value.points.every(isPlotMark)))
+        && (value.vlines === undefined || (Array.isArray(value.vlines) && value.vlines.every((x) => typeof x === 'number')))
         && Array.isArray(value.functions)
         && value.functions.every((item) => isRecord(item)
           && typeof item.expression === 'string' && Array.isArray(item.points));

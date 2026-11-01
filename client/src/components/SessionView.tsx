@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Composer } from './Composer';
 import { Conversation } from './Conversation';
 import { DocsPanel } from './DocsPanel';
@@ -7,6 +7,7 @@ import { StudySidePanel } from './StudySidePanel';
 import { UsageIndicator } from './UsageIndicator';
 import { UsagePanel } from './UsagePanel';
 import type {
+  BlockFocus,
   Board,
   ConnectionStatus,
   GraphActivity,
@@ -91,7 +92,15 @@ export function SessionView({
   const [modelsOpen, setModelsOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState(false);
+  const [focusRequest, setFocusRequest] = useState<BlockFocus | null>(null);
   const focused = panelExpanded && sidePanelOpen;
+
+  // Estable para que el chat no vuelva a procesar su Markdown.
+  const openBlock = useCallback((blockId: string): void => {
+    onSidePanelOpenChange(true);
+    onSidePanelTabChange('board');
+    setFocusRequest({ blockId });
+  }, [onSidePanelOpenChange, onSidePanelTabChange]);
   const dialogOpen = modelsOpen || usageOpen;
 
   useEffect(() => {
@@ -166,6 +175,7 @@ export function SessionView({
           graphActivities={graphActivities}
           isThinking={isBusy}
           messages={session.messages}
+          onBlockLink={openBlock}
           onDismissError={onDismissError}
           phase={session.phase}
           title={session.title}
@@ -182,6 +192,7 @@ export function SessionView({
         <StudySidePanel
           backendUrl={backendUrl}
           board={board}
+          focusRequest={focusRequest}
           focused={focused}
           isBusy={isBusy}
           key={session.id}

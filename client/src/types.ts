@@ -70,19 +70,39 @@ export interface PlotFunction {
   points: [number, number | null][];
 }
 
+export interface PlotMark {
+  x: number;
+  y: number;
+  label?: string;
+}
+
 export type BoardBlockContent =
   | { kind: 'markdown'; text: string }
   | { kind: 'math'; latex: string }
   | { kind: 'steps'; steps: BoardStep[] }
   | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'code'; language: 'python' | 'text'; code: string }
-  | { kind: 'plot'; functions: PlotFunction[]; x_min: number; x_max: number; y_min?: number; y_max?: number };
+  | {
+    kind: 'plot';
+    functions: PlotFunction[];
+    x_min: number;
+    x_max: number;
+    y_min?: number;
+    y_max?: number;
+    points?: PlotMark[];
+    vlines?: number[];
+  };
 
 export type BoardBlock = BoardBlockContent & {
   id: string;
   author: string;
   title?: string;
 };
+
+// Cada pedido es un objeto nuevo para poder repetir el mismo bloque.
+export interface BlockFocus {
+  blockId: string;
+}
 
 export interface Board {
   blocks: BoardBlock[];
