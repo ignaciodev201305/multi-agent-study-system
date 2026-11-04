@@ -29,7 +29,8 @@ Genera la salida con los siguientes campos:
 - Basa tu respuesta ÚNICAMENTE en el contenido del documento. No inventes ni agregues información externa.
 - Responde en el mismo idioma del documento.
 - Sé conciso: prioriza lo esencial sobre lo exhaustivo y evita elementos repetidos.
-- Ignora ruido de la extracción (números de página, encabezados o pies repetidos, texto cortado, referencias a imágenes).
+- Ignora ruido de la extracción (números de página, encabezados o pies repetidos, texto cortado).
+- Las marcas [Figura p.N: ...] describen gráficos o imágenes del PDF: úsalas como contenido, sobre todo en ejercicios y fórmulas.
 - Si un campo opcional no aplica al documento, devuélvelo como null en lugar de inventar contenido.
 """
 
@@ -55,13 +56,24 @@ Devuelve únicamente el contexto final, sin introducciones ni explicaciones adic
 Mantén la respuesta lo más breve posible sin perder la información esencial.
 """
 
-PARTIAL_SUMMARY_PROMPT = """Resume la parte {index} de {total} de un documento de estudio.
+DESCRIBE_FIGURE_PROMPT = """Esta imagen es una figura de un PDF de estudio. Descríbela para que un tutor pueda usarla sin verla.
+
+- Si es un gráfico de funciones: qué función o curva es (fórmula si se lee), ejes, intervalos, puntos clave (cortes, máximos, mínimos, asíntotas) y regiones sombreadas.
+- Si es un diagrama o esquema: elementos y relaciones.
+- Si contiene un enunciado o datos de un ejercicio, transcríbelos.
+- No resuelvas ejercicios ni agregues información que no esté en la imagen.
+- Máximo 80 palabras, en el idioma de la figura, sin introducciones.
+- Si es decorativa (logo, foto o ícono sin contenido de estudio), responde solo: NADA
+"""
+
+PARTIAL_SUMMARY_PROMPT ="""Resume la parte {index} de {total} de un documento de estudio.
 
 <documento>
 {block}
 </documento>
 
 - Conserva temas, definiciones, fórmulas, ejercicios, cifras y términos técnicos tal cual aparecen.
+- Conserva las marcas [Figura p.N: ...]: describen gráficos del PDF.
 - No agregues información externa ni resuelvas ejercicios.
 - Ignora ruido de la extracción (números de página, encabezados repetidos).
 - Responde solo con el resumen, en el idioma del documento, en no más de 800 palabras.

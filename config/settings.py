@@ -60,6 +60,12 @@ MAX_PDF_BYTES_PER_CHAT = 200 * 1024 * 1024
 # Límites de procesamiento de cada PDF en Docling.
 DOCLING_MAX_PAGES = max(1, int(os.environ.get("DOCLING_MAX_PAGES", "400")))
 DOCLING_TIMEOUT_SECONDS = max(10, int(os.environ.get("DOCLING_TIMEOUT_SECONDS", "900")))
+# Figuras por PDF que se describen con el modelo de visión; las demás se omiten.
+DOCUMENT_MAX_FIGURES = max(0, int(os.environ.get("DOCUMENT_MAX_FIGURES", "30")))
+# Lado mínimo en píxeles para describir una figura (descarta íconos y viñetas).
+DOCUMENT_FIGURE_MIN_SIDE = 100
+# Lado máximo en píxeles con que se envía cada figura; acota los tokens por imagen.
+DOCUMENT_FIGURE_MAX_SIDE = 768
 # Caracteres máximos por prompt de resumen antes de usar map-reduce.
 DOCUMENT_SUMMARY_CHAR_BUDGET = max(
     10_000, int(os.environ.get("DOCUMENT_SUMMARY_CHAR_BUDGET", "120000"))

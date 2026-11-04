@@ -1,15 +1,19 @@
 """Pipeline lineal de procesamiento de PDFs: Docling en un proceso aparte, índice Chroma y resumen."""
 
 import asyncio
+import base64
 import hashlib
+import io
 import logging
 import multiprocessing
 import os
+import re
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from langchain_core.messages import HumanMessage
 
 from config.settings import (
     CHROMA_DIRECTORY,
@@ -17,12 +21,20 @@ from config.settings import (
     DATA_DIRECTORY,
     DOCLING_MAX_PAGES,
     DOCLING_TIMEOUT_SECONDS,
+    DOCUMENT_FIGURE_MAX_SIDE,
+    DOCUMENT_FIGURE_MIN_SIDE,
+    DOCUMENT_MAX_FIGURES,
     DOCUMENT_SUMMARY_CHAR_BUDGET,
     PDF_DIRECTORY,
 )
 from core.chain import ChainBuilder
 from core.llm import build_embeddings, build_model
-from core.prompts.documents import BUILD_RAG_CONTEXT_PROMPT, MAP_STUDY_PROMPT, PARTIAL_SUMMARY_PROMPT
+from core.prompts.documents import (
+    BUILD_RAG_CONTEXT_PROMPT,
+    DESCRIBE_FIGURE_PROMPT,
+    MAP_STUDY_PROMPT,
+    PARTIAL_SUMMARY_PROMPT,
+)
 from core.schemas import MapStudy, RagContext
 from core.usage import UsageTracker
 
@@ -30,6 +42,12 @@ logger = logging.getLogger(__name__)
 
 # Se crea una vez por proceso hijo porque carga modelos pesados.
 _converter = None
+
+# Marca que deja el chunker donde estaba cada figura, con su ref de Docling.
+FIGURE_MARKER = "[[figura:{ref}]]"
+FIGURE_MARKER_PATTERN = re.compile(r"\[\[figura:([^\]]+)\]\]")
+# Respuesta del modelo para figuras sin contenido de estudio (logos, fotos decorativas).
+FIGURE_SKIP_ANSWER = "NADA"
 
 
 def _get_converter():
@@ -42,10 +60,55 @@ def _get_converter():
 
         options = PdfPipelineOptions()
         options.do_table_structure = False
+        # Recorta cada figura para describirla después con el modelo de visión.
+        options.generate_picture_images = True
+        options.images_scale = 1.5
         _converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
         )
     return _converter
+
+
+def _figure_chunker():
+    """HybridChunker que deja una marca con el ref de cada figura en vez de omitirla."""
+    from docling.chunking import HybridChunker
+    from docling_core.transforms.chunker.hierarchical_chunker import (
+        ChunkingDocSerializer,
+        ChunkingSerializerProvider,
+    )
+    from docling_core.transforms.serializer.common import create_ser_result
+    from docling_core.transforms.serializer.markdown import MarkdownPictureSerializer
+
+    class FigureMarkerSerializer(MarkdownPictureSerializer):
+        def _serialize_image_part(self, item, doc, image_mode, image_placeholder, **kwargs):
+            return create_ser_result(text=FIGURE_MARKER.format(ref=item.self_ref), span_source=item)
+
+    class FigureSerializerProvider(ChunkingSerializerProvider):
+        def get_serializer(self, doc):
+            return ChunkingDocSerializer(doc=doc, picture_serializer=FigureMarkerSerializer())
+
+    return HybridChunker(serializer_provider=FigureSerializerProvider())
+
+
+def _extract_figures(dl_doc, max_figures: int) -> list[dict]:
+    """Devuelve las figuras del documento como PNG en base64, en orden de aparición."""
+    figures = []
+    for picture in dl_doc.pictures:
+        if len(figures) >= max_figures:
+            break
+        image = picture.get_image(dl_doc)
+        if image is None or min(image.size) < DOCUMENT_FIGURE_MIN_SIDE:
+            continue
+        image.thumbnail((DOCUMENT_FIGURE_MAX_SIDE, DOCUMENT_FIGURE_MAX_SIDE))
+        buffer = io.BytesIO()
+        image.convert("RGB").save(buffer, format="PNG", optimize=True)
+        page = picture.prov[0].page_no if picture.prov else None
+        figures.append({
+            "ref": picture.self_ref,
+            "page": page,
+            "image": base64.b64encode(buffer.getvalue()).decode("ascii"),
+        })
+    return figures
 
 
 def _pages_from_metadata(metadata: dict) -> list[int]:
@@ -58,18 +121,31 @@ def _pages_from_metadata(metadata: dict) -> list[int]:
     return sorted(pages)
 
 
-def extract_chunks(pdf_path: str, max_pages: int) -> list[dict]:
-    """Corre en el proceso hijo: convierte el PDF y devuelve fragmentos serializables."""
-    from langchain_docling.loader import DoclingLoader
+def extract_chunks(pdf_path: str, max_pages: int, max_figures: int) -> tuple[list[dict], list[dict]]:
+    """Corre en el proceso hijo: devuelve fragmentos y figuras serializables."""
+    from langchain_docling.loader import MetaExtractor
 
-    loader = DoclingLoader(
-        file_path=pdf_path,
-        converter=_get_converter(),
-        convert_kwargs={"max_num_pages": max_pages},
-    )
+    dl_doc = _get_converter().convert(source=pdf_path, max_num_pages=max_pages).document
+    chunker = _figure_chunker()
+    meta_extractor = MetaExtractor()
+    chunks = []
+    for chunk in chunker.chunk(dl_doc):
+        metadata = meta_extractor.extract_chunk_meta(file_path=pdf_path, chunk=chunk)
+        chunks.append({
+            "page_content": chunker.contextualize(chunk=chunk),
+            "pages": _pages_from_metadata(metadata),
+        })
+    return chunks, _extract_figures(dl_doc, max_figures)
+
+
+def insert_figure_descriptions(chunks: list[dict], descriptions: dict[str, str]) -> list[dict]:
+    """Reemplaza cada marca de figura por su descripción, o la quita si no tiene."""
+    def replace(match):
+        return descriptions.get(match.group(1), "")
+
     return [
-        {"page_content": document.page_content, "pages": _pages_from_metadata(document.metadata)}
-        for document in loader.load()
+        {**chunk, "page_content": FIGURE_MARKER_PATTERN.sub(replace, chunk["page_content"]).strip()}
+        for chunk in chunks
     ]
 
 
@@ -84,10 +160,12 @@ class DoclingExecutor:
         """Crea el pool de un proceso para Docling."""
         return ProcessPoolExecutor(max_workers=1, mp_context=self._context)
 
-    async def extract(self, pdf_path: Path) -> list[dict]:
-        """Extrae los fragmentos del PDF con timeout."""
+    async def extract(self, pdf_path: Path) -> tuple[list[dict], list[dict]]:
+        """Extrae los fragmentos y las figuras del PDF con timeout."""
         loop = asyncio.get_running_loop()
-        future = loop.run_in_executor(self._pool, extract_chunks, str(pdf_path), DOCLING_MAX_PAGES)
+        future = loop.run_in_executor(
+            self._pool, extract_chunks, str(pdf_path), DOCLING_MAX_PAGES, DOCUMENT_MAX_FIGURES
+        )
         try:
             return await asyncio.wait_for(future, timeout=DOCLING_TIMEOUT_SECONDS)
         except (asyncio.TimeoutError, asyncio.CancelledError):
@@ -228,11 +306,45 @@ class DocumentPipeline:
 
     async def process(self, document: dict, pdf_path: Path, tracker: UsageTracker) -> tuple[dict, int]:
         """Devuelve (resumen como dict, número de fragmentos indexados)."""
-        chunks = await self.executor.extract(pdf_path)
+        chunks, figures = await self.executor.extract(pdf_path)
         model = await self._summary_model(document["chat_id"])
+        descriptions = await self.describe_figures(figures, model, tracker)
+        chunks = insert_figure_descriptions(chunks, descriptions)
         if document["document_type"] == "rag":
             return await self.process_rag(document, chunks, model, tracker)
         return await self.process_study_map(chunks, model, tracker)
+
+    async def describe_figures(self, figures: list[dict], model, tracker) -> dict[str, str]:
+        """Describe cada figura una sola vez; devuelve el texto que reemplaza su marca."""
+        descriptions = {}
+        by_image = {}
+        # Secuencial para acotar el gasto y el rate limit del proveedor.
+        for figure in figures:
+            if figure["image"] not in by_image:
+                by_image[figure["image"]] = await self._describe_figure(figure, model, tracker)
+            description = by_image[figure["image"]]
+            if description:
+                page = f" p.{figure['page']}" if figure["page"] else ""
+                descriptions[figure["ref"]] = f"[Figura{page}: {description}]"
+        return descriptions
+
+    async def _describe_figure(self, figure: dict, model, tracker) -> str | None:
+        """Pide la descripción de una figura; None si es decorativa o la llamada falla."""
+        message = HumanMessage(content=[
+            {"type": "text", "text": DESCRIBE_FIGURE_PROMPT},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{figure['image']}"}},
+        ])
+        try:
+            response = await model.ainvoke([message], config={"callbacks": [tracker]})
+        except Exception:
+            # Una figura sin describir no debe tumbar el documento.
+            logger.exception("No se pudo describir la figura %s", figure["ref"])
+            return None
+        text = response.content if isinstance(response.content, str) else ""
+        text = " ".join(text.split())
+        if not text or text.upper().strip(".") == FIGURE_SKIP_ANSWER:
+            return None
+        return text
 
     async def process_rag(self, document: dict, chunks: list[dict], model, tracker) -> tuple[dict, int]:
         """Indexa los fragmentos y genera el resumen del documento."""
