@@ -16,7 +16,7 @@ from config.settings import (
     SUPERVISOR_RECURSION_LIMIT,
 )
 from core.agents.builder import SupervisorBuilder
-from core.board import Board, board_inventory
+from core.board import BOARD_CONTEXT_MAX_ENTRIES, Board, board_inventory
 from core.chain import ChainBuilder
 from core.llm import build_model, model_for_turn, turn_models
 from core.prompts.session import SUMMARY_PROMPT
@@ -24,7 +24,6 @@ from core.tools import TurnContext
 
 logger = logging.getLogger(__name__)
 
-BOARD_CONTEXT_MAX_ENTRIES = 20
 DUE_REVIEWS_MAX_ENTRIES = 5
 # Los roles que quedan fijados al construir el supervisor.
 SUPERVISOR_ROLES = ("supervisor", "subagent_light", "subagent_heavy")

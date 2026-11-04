@@ -15,6 +15,8 @@ from config.settings import (
 MAX_TITLE_CHARS = 120
 MAX_PLOT_MARKS = 12
 MAX_EXERCISE_HINTS = 5
+# Bloques más recientes que el supervisor y los especialistas ven en su contexto.
+BOARD_CONTEXT_MAX_ENTRIES = 20
 TOPIC_FIELDS = ("topic_number", "topic")
 BLOCK_METADATA = {"id", "author", "title", *TOPIC_FIELDS}
 

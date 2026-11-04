@@ -13,12 +13,14 @@ from pydantic import ValidationError
 
 from core.agents.builder import (
     ADDED_BLOCKS_NOTE,
+    BOARD_CONTEXT_NOTE,
     SPECIALIST_FAILED_NOTE,
     SUPERVISOR_TOOLS,
     SupervisorBuilder,
     _subagent_tool,
 )
 from core.agents.catalog import ARCHETYPES, archetype_prompt, catalog_for_factory
+from core.board import MathBlock, add_block
 from core.prompts.context import STUDY_PLAN_PROMPT
 from core.prompts.session import MATH_VERIFY_RULE
 from core.schemas import StudyPlan
@@ -198,6 +200,26 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(ADDED_BLOCKS_NOTE, note)
         self.assertIn("Parcial", note)
         self.assertEqual(len(context.board.blocks), 1)
+
+    async def test_specialist_receives_board_inventory(self):
+        agent = SimpleNamespace(ainvoke=AsyncMock(return_value={"messages": [AIMessage(content="Listo.")]}))
+        with (
+            patch("core.agents.builder.build_model"),
+            patch("core.agents.builder.build_tools", return_value=[]),
+            patch("core.agents.builder.create_agent", return_value=agent),
+        ):
+            consult = _subagent_tool(ARCHETYPES["explicador"], "Derivadas.", {})
+
+        context = TurnContext("s")
+        await consult.coroutine(request="Explica.", runtime=_Runtime(context))
+        self.assertEqual(agent.ainvoke.await_args.args[0]["messages"][0].content, "Explica.")
+
+        add_block(context.board, MathBlock(kind="math", latex="x^2"), author="explicador", title="Cuadrado")
+        await consult.coroutine(request="Explica.", runtime=_Runtime(context))
+        sent = agent.ainvoke.await_args.args[0]["messages"][0].content
+        self.assertTrue(sent.startswith("Explica."))
+        self.assertIn(BOARD_CONTEXT_NOTE, sent)
+        self.assertIn("- b1 (math): Cuadrado", sent)
 
     async def test_graph_interrupt_is_not_treated_as_failure(self):
         agent = SimpleNamespace(ainvoke=AsyncMock(side_effect=GraphInterrupt(())))
