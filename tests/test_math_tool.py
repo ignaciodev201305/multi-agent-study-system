@@ -145,6 +145,84 @@ class MathToolTests(unittest.IsolatedAsyncioTestCase):
             await self.call(operation="sample", expression="x")
 
 
+class SolveTests(unittest.IsolatedAsyncioTestCase):
+    async def solve(self, expression, variable=None):
+        return await math_tool.ainvoke({"operation": "solve", "expression": expression, "variable": variable})
+
+    async def test_commas_inside_parentheses_do_not_split_equations(self):
+        self.assertIn("x = 8", await self.solve("log(x, 2) = 3", "x"))
+
+    async def test_system_with_every_unknown(self):
+        self.assertIn("{x: 2, y: 1}", await self.solve("x + y = 3, x - y = 1", "x, y"))
+        self.assertIn("{x: 2, y: 1}", await self.solve("x + y = 3, x - y = 1"))
+
+    async def test_system_with_missing_unknown_explains_instead_of_empty(self):
+        result = await self.solve("x + y = 3, x - y = 1", "x")
+        self.assertIn("Error", result)
+        self.assertIn("'x, y'", result)
+
+    async def test_inconsistent_system_says_no_solution(self):
+        self.assertIn("Sin solución", await self.solve("2*x + y = 1, 4*x + 2*y = 5"))
+
+    async def test_periodic_equation_gives_general_solution(self):
+        result = await self.solve("sin(x) = 0", "x")
+        self.assertIn("2*pi*k", result)
+        self.assertIn("2*pi*k + pi", result)
+        self.assertIn("k entero", result)
+
+    async def test_without_real_solution_reports_complex_ones(self):
+        result = await self.solve("x^2 + 1 = 0", "x")
+        self.assertIn("Sin solución real", result)
+        self.assertIn("en los complejos", result)
+
+    async def test_finite_and_parametric_solutions(self):
+        self.assertIn("x = -2, x = 2", await self.solve("x^2 - 4", "x"))
+        self.assertIn("x = b/a", await self.solve("a*x = b", "x"))
+
+    async def test_identity_is_every_real(self):
+        self.assertIn("Todo x real", await self.solve("x = x", "x"))
+
+    async def test_inequalities_give_intervals(self):
+        self.assertIn("x ∈ (-oo, -2) ∪ (2, oo)", await self.solve("x^2 > 4", "x"))
+        self.assertIn("x ∈ [-2, 2]", await self.solve("x^2 <= 4", "x"))
+        self.assertIn("x ∈ (-2, 4)", await self.solve("Abs(x - 1) < 3"))
+
+    async def test_without_closed_form_suggests_evaluate(self):
+        result = await self.solve("exp(x) - x - 2 = 0", "x")
+        self.assertIn("Error", result)
+        self.assertIn("evaluate", result)
+
+
+class InputFixesTests(unittest.IsolatedAsyncioTestCase):
+    async def call(self, **arguments):
+        return await math_tool.ainvoke(arguments)
+
+    async def test_logarithm_bases(self):
+        self.assertIn("4.605", await self.call(operation="evaluate", expression="log(100)"))
+        self.assertIn("Resultado: 3.0", await self.call(operation="evaluate", expression="log10(1000)"))
+        self.assertIn("Resultado: 3.0", await self.call(operation="evaluate", expression="log(8, 2)"))
+
+    async def test_lowercase_abs_and_real_simplify(self):
+        self.assertIn("Resultado: Abs(x)", await self.call(operation="simplify", expression="abs(x)"))
+        self.assertIn("Resultado: Abs(x)", await self.call(operation="simplify", expression="sqrt(x^2)"))
+
+    async def test_python_keyword_as_variable(self):
+        result = await self.call(operation="diff", expression="lambda^2", variable="lambda")
+        self.assertIn("2*lambda_", result)
+
+    async def test_limit_without_point_explains(self):
+        result = await self.call(operation="limit", expression="1/x", variable="x")
+        self.assertIn("limit necesita point", result)
+
+    async def test_several_variables_only_for_solve(self):
+        result = await self.call(operation="diff", expression="x^2", variable="x, y")
+        self.assertIn("una sola variable", result)
+
+    async def test_substitutions_keep_function_commas(self):
+        result = await self.call(operation="evaluate", expression="x + y", substitutions="x=log(8, 2), y=1")
+        self.assertIn("4.0", result)
+
+
 class SampleTests(unittest.IsolatedAsyncioTestCase):
     async def sample(self, expression, x_min, x_max, points, variable="x"):
         return await run_math({

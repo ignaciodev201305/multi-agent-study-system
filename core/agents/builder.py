@@ -11,7 +11,12 @@ from langgraph.errors import GraphBubbleUp
 from core.agents.catalog import ARCHETYPES, Archetype, archetype_prompt
 from core.board import board_inventory
 from core.llm import build_model
-from core.prompts.session import DOCUMENT_TOOL_RULES, MATH_FORMAT_RULE, SUPERVISOR_PROMPT
+from core.prompts.session import (
+    DOCUMENT_TOOL_RULES,
+    MATH_FORMAT_RULE,
+    MATH_VERIFY_RULE,
+    SUPERVISOR_PROMPT,
+)
 from core.schemas import StudyPlan
 from core.streaming import token_text
 from core.tools import TurnContext, build_tools
@@ -19,6 +24,7 @@ from core.tools import TurnContext, build_tools
 logger = logging.getLogger(__name__)
 
 SUPERVISOR_TOOLS = (
+    "math",
     "search_documents",
     "get_study_material",
     "record_progress",
@@ -37,10 +43,13 @@ def _subagent_tool(archetype: Archetype, focus: str, models: dict):
     """Envuelve un subagente como tool: recibe un pedido autocontenido y devuelve su respuesta."""
     role = f"subagent_{archetype.tier}"
     model = build_model(role, temperature=archetype.temperature, resolved=models.get(role))
+    rules = MATH_FORMAT_RULE
+    if "math" in archetype.tools:
+        rules += f"\n{MATH_VERIFY_RULE}"
     subagent = create_agent(
         model,
         tools=build_tools(archetype.tools),
-        system_prompt=f"{archetype_prompt(archetype, focus)}\n\n{MATH_FORMAT_RULE}",
+        system_prompt=f"{archetype_prompt(archetype, focus)}\n\n{rules}",
         context_schema=TurnContext,
         name=archetype.name,
     )
@@ -108,4 +117,4 @@ class SupervisorBuilder:
             supervisor_focus=plan.supervisor_focus,
             syllabus=syllabus,
             specialists=specialists,
-        ) + f"\n\n{MATH_FORMAT_RULE}\n{DOCUMENT_TOOL_RULES}"
+        ) + f"\n\n{MATH_FORMAT_RULE}\n{MATH_VERIFY_RULE}\n{DOCUMENT_TOOL_RULES}"

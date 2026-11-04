@@ -20,6 +20,7 @@ from core.agents.builder import (
 )
 from core.agents.catalog import ARCHETYPES, archetype_prompt, catalog_for_factory
 from core.prompts.context import STUDY_PLAN_PROMPT
+from core.prompts.session import MATH_VERIFY_RULE
 from core.schemas import StudyPlan
 from core.tools import TOOL_NAMES, TurnContext
 from core.tools.documents import get_study_material, search_documents
@@ -86,6 +87,9 @@ class ToolNamesTests(unittest.TestCase):
     def test_exercises_belong_to_the_trainer(self):
         self.assertIn("exercise", ARCHETYPES["entrenador_de_ejercicios"].prompt)
         self.assertNotIn("exercise", ARCHETYPES["evaluador"].prompt)
+
+    def test_supervisor_can_verify_math(self):
+        self.assertIn("math", SUPERVISOR_TOOLS)
 
     def test_evaluator_and_analyst_tools(self):
         self.assertIn("search_documents", ARCHETYPES["evaluador"].tools)
@@ -212,6 +216,17 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2. Regla de la cadena", prompt)
         self.assertIn("- evaluador:", prompt)
         self.assertIn("$...$", prompt)
+        self.assertIn(MATH_VERIFY_RULE, prompt)
+
+    def test_only_specialists_with_math_get_the_verify_rule(self):
+        for name, archetype in ARCHETYPES.items():
+            with (
+                patch("core.agents.builder.build_tools", return_value=[]),
+                patch("core.agents.builder.create_agent") as create_agent,
+            ):
+                _subagent_tool(archetype, "Foco.", {})
+            prompt = create_agent.call_args.kwargs["system_prompt"]
+            self.assertEqual(MATH_VERIFY_RULE in prompt, "math" in archetype.tools, name)
 
 
 def _tools_without_web(names):

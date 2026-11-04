@@ -53,14 +53,20 @@ async def math_tool(
 ) -> str:
     """Cálculo simbólico exacto con SymPy. Úsala para verificar resultados antes de darlos.
 
-    expression usa sintaxis tipo Python, no LaTeX: 3*x^2 + sin(theta), sqrt(x), e^(-t/2), log(x).
+    expression usa sintaxis tipo Python, no LaTeX: 3*x^2 + sin(theta), sqrt(x), e^(-t/2), Abs(x).
     e es la constante de Euler. No admite funciones sin definir como f(x).
-    - simplify / expand / factor: reescribe la expresión.
+    log(x) y ln(x) son el logaritmo natural; log10(x) es base 10 y log(x, b) es base b.
+    Usa paréntesis explícitos: 1/2x se lee como x/2; para 1/(2x) escribe 1/(2*x).
+    - simplify / expand / factor: reescribe la expresión (simplify toma las variables como reales).
     - diff: derivada respecto de variable (order para derivadas de orden n).
-    - integrate: primitiva; con lower y upper, integral definida.
+    - integrate: primitiva sin constante; log(x) en una primitiva significa ln|x|.
+      Con lower y upper, integral definida.
     - limit: límite cuando variable tiende a point (usa oo para infinito).
       Si los límites laterales difieren, responde que no existe y da ambos valores.
-    - solve: ecuaciones 'x^2 - 4 = 0' (varias separadas por coma), despejando variable.
+    - solve: una ecuación 'x^2 - 4 = 0' se resuelve en los reales, con la solución general si
+      es periódica (k entero) y aviso si solo tiene soluciones complejas. También resuelve
+      desigualdades 'x^2 > 4' (da intervalos) y sistemas separados por coma
+      'x + y = 3, x - y = 1'; en un sistema, variable lista todas las incógnitas: 'x, y'.
     - evaluate: valor numérico; substitutions como 'x=2, y=1/3'.
     - series: desarrollo de Taylor en torno a point (0 si se omite), hasta order términos.
     - summation: suma de expression con variable entre lower y upper (usa oo para infinito).

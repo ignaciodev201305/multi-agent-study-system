@@ -1,6 +1,7 @@
 """Proceso aislado de SymPy que lee una operación JSON por stdin y escribe el resultado por stdout."""
 
 import json
+import keyword
 import math
 import re
 import sys
@@ -12,11 +13,14 @@ SAMPLE_MAX_ABS = 1e6
 MATRIX_MAX_SIZE = 6
 MATRIX_OPERATIONS = {"det", "inverse", "rank", "eigenvals"}
 SERIES_DEFAULT_ORDER = 6
-ALLOWED_CHARS = re.compile(r"[0-9A-Za-z_+\-*/^().,= ]*")
+ALLOWED_CHARS = re.compile(r"[0-9A-Za-z_+\-*/^().,=<> ]*")
 ALLOWED_FUNCTIONS = {
     "sin", "cos", "tan", "cot", "sec", "csc", "asin", "acos", "atan", "sinh", "cosh", "tanh",
-    "exp", "log", "ln", "sqrt", "Abs", "factorial", "binomial", "floor", "ceiling",
+    "exp", "log", "ln", "log10", "sqrt", "Abs", "abs", "factorial", "binomial", "floor", "ceiling",
 }
+# Palabras reservadas de Python que el alumno puede usar como variable (lambda, in).
+KEYWORD_PATTERN = re.compile(r"\b(" + "|".join(keyword.kwlist) + r")\b")
+INEQUALITY_PATTERN = re.compile(r"(<=|>=|<|>)")
 CONSTANTS = {"pi": "pi", "E": "E", "e": "E", "I": "I", "oo": "oo"}
 # Estos nombres serían funciones sin definir; otra letra antes de "(" multiplica.
 UNDEFINED_FUNCTIONS = {"f", "g", "h"}
@@ -42,6 +46,7 @@ def _check(expression: str) -> str:
     expression = str(expression).strip()
     for symbol, replacement in UNICODE_REPLACEMENTS.items():
         expression = expression.replace(symbol, replacement)
+    expression = KEYWORD_PATTERN.sub(r"\1_", expression)
     if not expression or len(expression) > MAX_EXPRESSION_CHARS:
         raise ValueError("Expresión vacía o demasiado larga.")
     if "\\" in expression or "{" in expression:
@@ -74,6 +79,8 @@ def _parse(expression: str):
 
     namespace = {name: getattr(sympy, name) for name in ALLOWED_FUNCTIONS if hasattr(sympy, name)}
     namespace["ln"] = sympy.log
+    namespace["abs"] = sympy.Abs
+    namespace["log10"] = lambda argument: sympy.log(argument, 10)
     namespace.update({name: getattr(sympy, value) for name, value in CONSTANTS.items()})
     global_namespace = {
         name: getattr(sympy, name)
@@ -94,6 +101,23 @@ def _parse(expression: str):
     )
 
 
+def _split_top_level(text: str) -> list[str]:
+    """Separa por las comas que no están dentro de paréntesis, como en log(x, 2)."""
+    parts, depth, current = [], 0, ""
+    for character in text:
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        if character == "," and depth == 0:
+            parts.append(current)
+            current = ""
+        else:
+            current += character
+    parts.append(current)
+    return [part.strip() for part in parts if part.strip()]
+
+
 def _equation(text: str):
     """Convierte un texto con '=' en una ecuación de SymPy."""
     import sympy
@@ -104,6 +128,110 @@ def _equation(text: str):
         left, right = text.split("=")
         return sympy.Eq(_parse(left), _parse(right))
     return _parse(text)
+
+
+def _inequality(text: str):
+    """Convierte un texto como 'x^2 > 4' en una desigualdad de SymPy."""
+    import sympy
+
+    parts = INEQUALITY_PATTERN.split(text)
+    if len(parts) != 3:
+        raise ValueError("Cada desigualdad debe tener un solo <, >, <= o >=.")
+    left, operator, right = parts
+    return sympy.Rel(_parse(left), _parse(right), operator)
+
+
+def _real(expression):
+    """Reemplaza los símbolos por versiones reales: sqrt(x^2) pasa a |x|."""
+    import sympy
+
+    return expression.xreplace({
+        symbol: sympy.Symbol(symbol.name, real=True) for symbol in expression.free_symbols
+    })
+
+
+def _variables(text: str | None) -> list:
+    """Convierte 'x' o 'x, y' en la lista de símbolos pedidos."""
+    import sympy
+
+    if not text:
+        return []
+    return [sympy.Symbol(_check(name)) for name in _split_top_level(str(text))]
+
+
+def _format_set(result, symbol) -> str:
+    """Describe en texto un conjunto solución de solveset."""
+    import sympy
+
+    if result == sympy.S.EmptySet:
+        return "Sin solución real"
+    if result == sympy.S.Reals:
+        return f"Todo {symbol} real"
+    if isinstance(result, sympy.Interval):
+        left = "(" if result.left_open else "["
+        right = ")" if result.right_open else "]"
+        return f"{symbol} ∈ {left}{result.start}, {result.end}{right}"
+    if isinstance(result, sympy.Union) and all(isinstance(part, sympy.Interval) for part in result.args):
+        intervals = (_format_set(part, symbol).split(" ∈ ", 1)[1] for part in result.args)
+        return f"{symbol} ∈ " + " ∪ ".join(intervals)
+    if isinstance(result, sympy.FiniteSet):
+        return ", ".join(f"{symbol} = {value}" for value in result.args)
+    if isinstance(result, sympy.ImageSet):
+        (integer,) = result.lamda.variables
+        value = result.lamda.expr.xreplace({integer: sympy.Symbol("k")})
+        return f"{symbol} = {value}, con k entero"
+    if isinstance(result, sympy.Union):
+        return "; ".join(_format_set(part, symbol) for part in result.args)
+    return f"{symbol} ∈ {result}"
+
+
+def _solve_single(equation, symbol) -> dict:
+    """Resuelve una ecuación en los reales; da la solución general si es periódica."""
+    import sympy
+
+    if sympy.sympify(equation).free_symbols - {symbol}:
+        # Con parámetros (a*x = b) solveset devuelve conjuntos condicionados poco legibles.
+        solutions = sympy.solve(equation, symbol)
+        text = ", ".join(f"{symbol} = {value}" for value in solutions) or "Sin solución"
+        return {"result": text, "latex": sympy.latex(solutions)}
+    real_symbol = sympy.Symbol(symbol.name, real=True)
+    result = sympy.solveset(_real(equation), real_symbol, sympy.S.Reals)
+    if isinstance(result, sympy.ConditionSet):
+        raise ValueError("No hay solución cerrada; aproxima con evaluate o reescribe la ecuación.")
+    text = _format_set(result, symbol)
+    if result == sympy.S.EmptySet:
+        # Con el símbolo sin la marca de real, para que pueda tomar valores complejos.
+        complex_result = sympy.solveset(equation, symbol, sympy.S.Complexes)
+        if isinstance(complex_result, sympy.FiniteSet) and complex_result:
+            text += f"; en los complejos: {_format_set(complex_result, symbol)}"
+    return {"result": text, "latex": sympy.latex(result)}
+
+
+def _solve(expression: str, variables: list) -> dict:
+    """Resuelve una ecuación, una desigualdad o un sistema."""
+    import sympy
+
+    parts = _split_top_level(expression)
+    if len(variables) > 1 or len(parts) > 1:
+        equations = [_equation(part) for part in parts]
+        result = sympy.solve(equations, *variables, dict=True)
+        unknowns = set().union(*(sympy.sympify(equation).free_symbols for equation in equations))
+        missing = sorted(map(str, unknowns - set(variables))) if variables else []
+        if not result and missing:
+            raise ValueError(
+                f"El sistema también depende de {missing}: pásalas en variable, p. ej. 'x, y'."
+            )
+        return {"result": str(result) if result else "Sin solución", "latex": sympy.latex(result)}
+
+    text = parts[0] if parts else ""
+    if INEQUALITY_PATTERN.search(text):
+        relation = _real(_inequality(text))
+        symbol = sympy.Symbol(variables[0].name, real=True) if variables else _single_symbol(relation)
+        result = sympy.solve_univariate_inequality(relation, symbol, relational=False)
+        return {"result": _format_set(result, symbol), "latex": sympy.latex(result)}
+
+    equation = _equation(text)
+    return _solve_single(equation, variables[0] if variables else _single_symbol(equation))
 
 
 def _limit(target, symbol, point):
@@ -196,10 +324,15 @@ def run(request: dict) -> dict:
     expression = request.get("expression")
     if not expression:
         raise ValueError("La operación necesita expression.")
-    variable = sympy.Symbol(_check(request["variable"])) if request.get("variable") else None
+    variables = _variables(request.get("variable"))
+    if operation == "solve":
+        return _solve(expression, variables)
+    if len(variables) > 1:
+        raise ValueError("Esta operación usa una sola variable.")
+    variable = variables[0] if variables else None
 
     if operation == "simplify":
-        result = sympy.simplify(_parse(expression))
+        result = sympy.simplify(_real(_parse(expression)))
     elif operation == "expand":
         result = sympy.expand(_parse(expression))
     elif operation == "factor":
@@ -216,6 +349,8 @@ def run(request: dict) -> dict:
         else:
             result = sympy.integrate(target, symbol)
     elif operation == "limit":
+        if request.get("point") is None:
+            raise ValueError("limit necesita point (usa oo para infinito).")
         target = _parse(expression)
         result = _limit(target, variable or _single_symbol(target), _parse(str(request["point"])))
         if isinstance(result, tuple):
@@ -246,15 +381,10 @@ def run(request: dict) -> dict:
             float(request["x_max"]),
             int(request["points"]),
         )}
-    elif operation == "solve":
-        equations = [_equation(part) for part in expression.split(",")]
-        symbols = [variable] if variable else None
-        result = sympy.solve(equations if len(equations) > 1 else equations[0], *(symbols or []), dict=True)
-        return {"result": str(result), "latex": sympy.latex(result)}
     elif operation == "evaluate":
         target = _parse(expression)
         substitutions = {}
-        for assignment in (request.get("substitutions") or "").split(","):
+        for assignment in _split_top_level(request.get("substitutions") or ""):
             if assignment.strip():
                 name, value = assignment.split("=")
                 substitutions[sympy.Symbol(_check(name))] = _parse(value)
