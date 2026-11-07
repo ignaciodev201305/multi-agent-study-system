@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -392,7 +393,7 @@ class BoardToolTests(unittest.IsolatedAsyncioTestCase):
         await board_add.coroutine(block=OTHER_MATH, runtime=runtime)
 
         new_block = _block(kind="markdown", text="nuevo")
-        await board_edit.coroutine(action="update", block_id="b1", block=new_block, runtime=runtime)
+        await board_add.coroutine(block=new_block, replace_id="b1", runtime=runtime)
         self.assertEqual(runtime.context.board.blocks[0]["text"], "nuevo")
         await board_edit.coroutine(action="remove", block_id="b2", runtime=runtime)
         self.assertEqual(len(runtime.context.board.blocks), 1)
@@ -404,14 +405,13 @@ class BoardToolTests(unittest.IsolatedAsyncioTestCase):
         runtime = self.runtime()
         await board_add.coroutine(block=MATH, runtime=runtime)
         block = _block(kind="plot", functions=[{"expression": "x"}], x_min=0, x_max=1)
-        await board_edit.coroutine(action="update", block_id="b1", block=block, runtime=runtime)
+        await board_add.coroutine(block=block, replace_id="b1", runtime=runtime)
         self.assertEqual(len(runtime.context.board.blocks[0]["functions"][0]["points"]), 200)
 
     async def test_edit_errors_are_text(self):
         runtime = self.runtime()
         for arguments in (
             {"action": "remove"},
-            {"action": "update", "block_id": "b1"},
             {"action": "remove", "block_id": "b1"},
         ):
             result = await board_edit.coroutine(runtime=runtime, **arguments)
@@ -443,7 +443,7 @@ class BoardToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((block["topic_number"], block["topic"]), (2, "Cadena"))
 
         new = _block(kind="markdown", text="nuevo")
-        await board_edit.coroutine(action="update", block_id="b1", block=new, runtime=runtime)
+        await board_add.coroutine(block=new, replace_id="b1", runtime=runtime)
         self.assertEqual(runtime.context.board.blocks[0]["topic"], "Cadena")
 
         result = await board_add.coroutine(block=_block(kind="markdown", text="otro"), topic_number=9, runtime=runtime)
@@ -498,14 +498,45 @@ class BoardToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("points", runtime.context.board.blocks[0]["functions"][0])
         self.assertIn("Error", await get_board.coroutine(block_id="b9", runtime=runtime))
 
-    async def test_board_edit_changes_title_only_when_sent(self):
+    async def test_replace_errors_and_topic_change(self):
+        plan = StudyPlan.model_validate({
+            "subject": "derivadas",
+            "syllabus": ["Definición", "Cadena"],
+            "archetypes": [{"archetype": "explicador", "focus": "Derivadas."}],
+            "supervisor_focus": "Guiar.",
+        })
+        runtime = _Runtime(TurnContext(session_id="s", study_plan=plan))
+        result = await board_add.coroutine(block=MATH, replace_id="b9", runtime=runtime)
+        self.assertTrue(result.startswith("Error: No existe el bloque b9"))
+
+        await board_add.coroutine(block=MATH, topic_number=1, runtime=runtime)
+        result = await board_add.coroutine(block=OTHER_MATH, replace_id="b1", topic_number=2, runtime=runtime)
+        self.assertEqual(result, "Bloque reemplazado: b1.")
+        self.assertEqual((runtime.context.board.blocks[0]["topic"], len(runtime.context.board.blocks)), ("Cadena", 1))
+
+    async def test_specialists_replace_only_their_own_blocks(self):
+        context = TurnContext(session_id="s")
+        await board_add.coroutine(block=MATH, runtime=_Runtime(context))
+        specialist = _Runtime(replace(context, author="explicador"))
+        result = await board_add.coroutine(block=OTHER_MATH, replace_id="b1", runtime=specialist)
+        self.assertIn("es de profesor_principal", result)
+        self.assertEqual(specialist.events, [])
+
+        await board_add.coroutine(block=OTHER_MATH, runtime=specialist)
+        result = await board_add.coroutine(block=_block(kind="markdown", text="fix"), replace_id="b2", runtime=specialist)
+        self.assertEqual(result, "Bloque reemplazado: b2.")
+        # El profesor puede corregir el bloque del especialista y conserva su autor.
+        await board_add.coroutine(block=_block(kind="markdown", text="prof"), replace_id="b2", runtime=_Runtime(context))
+        self.assertEqual(context.board.blocks[1]["author"], "explicador")
+
+    async def test_replace_changes_title_only_when_sent(self):
         runtime = _Runtime(TurnContext(session_id="s"))
         await board_add.coroutine(block=MATH, title="Antes", runtime=runtime)
         new = _block(kind="markdown", text="uno")
-        await board_edit.coroutine(action="update", block_id="b1", block=new, runtime=runtime)
+        await board_add.coroutine(block=new, replace_id="b1", runtime=runtime)
         self.assertEqual(runtime.context.board.blocks[0]["title"], "Antes")
         new = _block(kind="markdown", text="dos")
-        await board_edit.coroutine(action="update", block_id="b1", block=new, title="  Después  ", runtime=runtime)
+        await board_add.coroutine(block=new, replace_id="b1", title="  Después  ", runtime=runtime)
         self.assertEqual(runtime.context.board.blocks[0]["title"], "Después")
 
     async def test_get_board(self):

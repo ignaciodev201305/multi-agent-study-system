@@ -51,27 +51,22 @@ async def math_tool(
     substitutions: str | None = None,
     matrix: list[list[str | int | float]] | None = None,
 ) -> str:
-    """Cálculo simbólico exacto con SymPy. Úsala para verificar resultados antes de darlos.
+    """Cálculo simbólico exacto (SymPy). Úsala para verificar resultados antes de darlos.
 
-    expression usa sintaxis tipo Python, no LaTeX: 3*x^2 + sin(theta), sqrt(x), e^(-t/2), Abs(x).
-    e es la constante de Euler. No admite funciones sin definir como f(x).
-    log(x) y ln(x) son el logaritmo natural; log10(x) es base 10 y log(x, b) es base b.
-    Usa paréntesis explícitos: 1/2x se lee como x/2; para 1/(2x) escribe 1/(2*x).
-    - simplify / expand / factor: reescribe la expresión (simplify toma las variables como reales).
-    - diff: derivada respecto de variable (order para derivadas de orden n).
-    - integrate: primitiva sin constante; log(x) en una primitiva significa ln|x|.
-      Con lower y upper, integral definida.
-    - limit: límite cuando variable tiende a point (usa oo para infinito).
-      Si los límites laterales difieren, responde que no existe y da ambos valores.
-    - solve: una ecuación 'x^2 - 4 = 0' se resuelve en los reales, con la solución general si
-      es periódica (k entero) y aviso si solo tiene soluciones complejas. También resuelve
-      desigualdades 'x^2 > 4' (da intervalos) y sistemas separados por coma
-      'x + y = 3, x - y = 1'; en un sistema, variable lista todas las incógnitas: 'x, y'.
-    - evaluate: valor numérico; substitutions como 'x=2, y=1/3'.
-    - series: desarrollo de Taylor en torno a point (0 si se omite), hasta order términos.
-    - summation: suma de expression con variable entre lower y upper (usa oo para infinito).
-    - det / inverse / rank / eigenvals: álgebra lineal sobre matrix, una lista de filas de hasta
-      6x6, p. ej. [["1", "2"], ["3", "x"]]. No llevan expression.
+    expression en sintaxis Python, no LaTeX: 3*x^2 + sin(theta), sqrt(x), e^(-t/2), Abs(x).
+    e es Euler; sin funciones indefinidas como f(x). log y ln: natural; log10(x); log(x, b).
+    Paréntesis explícitos: 1/2x es x/2; escribe 1/(2*x).
+    - simplify/expand/factor (simplify toma variables reales).
+    - diff: respecto de variable; order para orden n.
+    - integrate: primitiva sin constante (log(x) es ln|x|); con lower y upper, definida.
+    - limit: variable tiende a point (oo es infinito); si los laterales difieren, da ambos.
+    - solve: en los reales, con solución general si es periódica (k entero) y aviso si solo
+      hay complejas. También desigualdades 'x^2 > 4' (intervalos) y sistemas
+      'x + y = 3, x - y = 1' con variable 'x, y'.
+    - evaluate: valor numérico; substitutions 'x=2, y=1/3'.
+    - series: Taylor en point (0 por defecto) hasta order términos.
+    - summation: expression con variable de lower a upper (oo admitido).
+    - det/inverse/rank/eigenvals: matrix de hasta 6x6, p. ej. [["1", "2"], ["3", "x"]]; sin expression.
     """
     response = await run_math({
         "operation": operation,

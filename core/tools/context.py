@@ -6,6 +6,9 @@ from core.board import Board
 from core.schemas import StudyPlan
 from core.study.repository import ProgressUpdate
 
+# Autor de los bloques del supervisor; los especialistas firman con su nombre.
+SUPERVISOR_AUTHOR = "profesor_principal"
+
 
 @dataclass
 class TurnContext:
@@ -21,7 +24,7 @@ class TurnContext:
     # Copia de trabajo del turno.
     board: Board = field(default_factory=Board)
     # Quién firma los bloques que se agregan.
-    author: str = "profesor_principal"
+    author: str = SUPERVISOR_AUTHOR
 
     def topic_name(self, topic_number: int) -> str | None:
         """Devuelve el tema del temario con ese número, o None si no existe."""

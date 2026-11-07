@@ -8,7 +8,9 @@ from langchain.messages import HumanMessage
 from langchain.tools import ToolRuntime, tool
 from langgraph.errors import GraphBubbleUp
 
+from config.settings import SPECIALIST_MAX_MODEL_CALLS, SUPERVISOR_MAX_MODEL_CALLS
 from core.agents.catalog import ARCHETYPES, Archetype, archetype_prompt
+from core.agents.middleware import CallLimitMiddleware, PromptCacheMiddleware
 from core.board import BOARD_CONTEXT_MAX_ENTRIES, board_inventory
 from core.llm import build_model
 from core.prompts.session import (
@@ -41,6 +43,11 @@ SPECIALIST_FAILED_NOTE = (
     "Nota para el profesor (no la muestres al alumno): el especialista no pudo responder. "
     "Continúa con otro especialista o con una explicación breve propia."
 )
+SPECIALIST_LIMIT_NOTE = (
+    "Nota para el profesor (no la muestres al alumno): el especialista agotó sus pasos sin terminar. "
+    "Usa lo que ya agregó o da una explicación breve propia."
+)
+SUPERVISOR_LIMIT_MESSAGE = "No alcancé a terminar en este turno. Escribe «sigue» y continúo desde aquí."
 
 
 def _subagent_tool(archetype: Archetype, focus: str, models: dict):
@@ -56,6 +63,10 @@ def _subagent_tool(archetype: Archetype, focus: str, models: dict):
         system_prompt=f"{archetype_prompt(archetype, focus)}\n\n{rules}",
         context_schema=TurnContext,
         name=archetype.name,
+        middleware=[
+            CallLimitMiddleware(SPECIALIST_MAX_MODEL_CALLS, SPECIALIST_LIMIT_NOTE, archetype.name),
+            PromptCacheMiddleware(),
+        ],
     )
 
     async def consult(request: str, runtime: ToolRuntime[TurnContext]) -> str:
@@ -110,6 +121,10 @@ class SupervisorBuilder:
             system_prompt=self.system_prompt(),
             context_schema=TurnContext,
             name="profesor_principal",
+            middleware=[
+                CallLimitMiddleware(SUPERVISOR_MAX_MODEL_CALLS, SUPERVISOR_LIMIT_MESSAGE, "profesor_principal"),
+                PromptCacheMiddleware(),
+            ],
         )
 
     def system_prompt(self) -> str:

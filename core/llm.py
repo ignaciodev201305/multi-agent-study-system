@@ -51,6 +51,8 @@ def build_model(role: str, temperature: float | None = None, resolved: dict | No
     effort = resolved["effort"] if "effort" in resolved else spec["reasoning_effort"]
     if effort and resolved.get("supports_reasoning") is not False:
         kwargs["reasoning_effort"] = effort
+    if spec.get("max_tokens"):
+        kwargs["max_tokens"] = spec["max_tokens"]
     try:
         return OpenRouterChat(**kwargs)
     except Exception:

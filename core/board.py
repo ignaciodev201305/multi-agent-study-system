@@ -246,8 +246,9 @@ def update_block(
     *,
     title: str | None = None,
     samples: list | None = None,
+    topic: tuple[int, str] | None = None,
 ) -> dict:
-    """Reemplaza el contenido de un bloque; sin título nuevo conserva el actual."""
+    """Reemplaza el contenido de un bloque; sin título ni tema nuevos conserva los actuales."""
     validate_block(block)
     _check_ops(board)
     index = _find(board, block_id)
@@ -256,6 +257,8 @@ def update_block(
     clean_title = _clean_title(title)
     if clean_title:
         stored["title"] = clean_title
+    if topic is not None:
+        stored.update(zip(TOPIC_FIELDS, topic))
     stored.update(_content(block, samples))
     board.blocks[index] = stored
     return _patch(board, "upsert", block=stored)

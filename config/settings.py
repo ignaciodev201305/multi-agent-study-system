@@ -9,24 +9,34 @@ load_dotenv()
 
 
 
-def _model_role(role: str, model: str, temperature: float, reasoning_effort: str | None = None) -> dict:
-    """Modelo de un rol con override por entorno: MODEL_<ROL>, TEMPERATURE_<ROL>, REASONING_<ROL>."""
+def _model_role(
+    role: str,
+    model: str,
+    temperature: float,
+    reasoning_effort: str | None = None,
+    max_tokens: int | None = None,
+) -> dict:
+    """Modelo de un rol con override por entorno: MODEL_, TEMPERATURE_, REASONING_ y MAX_TOKENS_<ROL>."""
     key = role.upper()
+    max_tokens = os.environ.get(f"MAX_TOKENS_{key}", max_tokens)
     return {
         "model": os.environ.get(f"MODEL_{key}", model),
         "temperature": float(os.environ.get(f"TEMPERATURE_{key}", temperature)),
         "reasoning_effort": os.environ.get(f"REASONING_{key}", reasoning_effort) or None,
+        "max_tokens": int(max_tokens) if max_tokens else None,
     }
 
 
-# Modelo, temperatura y esfuerzo de razonamiento de cada rol.
+# Modelo, temperatura, esfuerzo de razonamiento y tope de salida de cada rol.
+# El tope es una red de seguridad para roles de salida acotada; en algunos proveedores incluye el
+# razonamiento, por eso es amplio. Supervisor y especialistas no lo llevan: sus explicaciones varían.
 MODEL_ROLES = {
-    "context_classifier": _model_role("context_classifier", "google/gemini-3.1-flash-lite", 0.0, "medium"),
-    "factory": _model_role("factory", "google/gemini-3.1-flash-lite", 0.0, "medium"),
+    "context_classifier": _model_role("context_classifier", "google/gemini-3.1-flash-lite", 0.0, "medium", 4000),
+    "factory": _model_role("factory", "google/gemini-3.1-flash-lite", 0.0, "medium", 6000),
     "supervisor": _model_role("supervisor", "x-ai/grok-4.7", 0.0),
     "subagent_light": _model_role("subagent_light", "deepseek/deepseek-v4.1-flash", 0.2),
     "subagent_heavy": _model_role("subagent_heavy", "deepseek/deepseek-v4.1-flash", 0.2),
-    "summarizer": _model_role("summarizer", "anthropic/claude-haiku-5.5", 0.0),
+    "summarizer": _model_role("summarizer", "anthropic/claude-haiku-5.5", 0.0, max_tokens=6000),
 }
 EMBEDDINGS_MODEL = os.environ.get("MODEL_EMBEDDINGS", "qwen/qwen3-embedding-8b")
 
@@ -81,6 +91,9 @@ WS_MAX_TURNS_PER_MINUTE = max(1, int(os.environ.get("WS_MAX_TURNS_PER_MINUTE", "
 MATH_TIMEOUT_SECONDS = max(1, int(os.environ.get("MATH_TIMEOUT_SECONDS", "8")))
 # Pasos máximos del supervisor por turno.
 SUPERVISOR_RECURSION_LIMIT = max(5, int(os.environ.get("SUPERVISOR_RECURSION_LIMIT", "40")))
+# Llamadas al modelo por turno; la última se hace sin tools para que el agente cierre con una respuesta.
+SUPERVISOR_MAX_MODEL_CALLS = max(2, int(os.environ.get("SUPERVISOR_MAX_MODEL_CALLS", "8")))
+SPECIALIST_MAX_MODEL_CALLS = max(2, int(os.environ.get("SPECIALIST_MAX_MODEL_CALLS", "6")))
 
 # Límites de la pizarra de cada sesión.
 BOARD_MAX_BLOCKS = max(1, int(os.environ.get("BOARD_MAX_BLOCKS", "60")))

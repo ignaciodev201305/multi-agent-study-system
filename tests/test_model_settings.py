@@ -251,6 +251,12 @@ class BuildModelTests(unittest.TestCase):
         self.assertNotIn("temperature", kwargs)
         self.assertNotIn("reasoning_effort", kwargs)
 
+    def test_output_cap_only_on_bounded_roles(self):
+        self.assertEqual(self.kwargs()["max_tokens"], MODEL_ROLES["context_classifier"]["max_tokens"])
+        self.assertGreater(MODEL_ROLES["summarizer"]["max_tokens"], 0)
+        for role in ("supervisor", "subagent_light", "subagent_heavy"):
+            self.assertNotIn("max_tokens", self.kwargs(role=role))
+
     def test_resolved_effort_replaces_the_role_value(self):
         self.assertEqual(self.kwargs(resolved={"model": TOOLS_MODEL, "effort": "high"})["reasoning_effort"], "high")
 

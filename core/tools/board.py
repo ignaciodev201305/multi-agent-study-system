@@ -17,7 +17,7 @@ from core.board import (
     update_block,
     validate_block,
 )
-from core.tools.context import TurnContext
+from core.tools.context import SUPERVISOR_AUTHOR, TurnContext
 from core.tools.symbolic import run_math
 
 PLOT_SAMPLE_POINTS = 200
@@ -45,12 +45,22 @@ async def _sample_plot(block: BoardBlock) -> list | None:
     return [response["result"] for response in responses]
 
 
+def _check_can_replace(context: TurnContext, block_id: str) -> None:
+    """El profesor corrige cualquier bloque; un especialista, solo los suyos."""
+    if context.author == SUPERVISOR_AUTHOR:
+        return
+    for block in context.board.blocks:
+        if block["id"] == block_id and block["author"] != context.author:
+            raise BoardError(f"{block_id} es de {block['author']}: solo puedes reemplazar bloques tuyos.")
+
+
 @tool
 async def board_add(
     block: BoardBlock,
     runtime: ToolRuntime[TurnContext],
     title: str | None = None,
     topic_number: int | None = None,
+    replace_id: str | None = None,
 ) -> str:
     """Agrega un bloque a la pizarra que el alumno ve junto al chat y devuelve su id.
 
@@ -69,6 +79,8 @@ async def board_add(
       El alumno ve el enunciado y abre pistas y solución cuando quiere; no los repitas en el chat.
     title: título corto del bloque.
     topic_number: número del tema en el TEMARIO, para agrupar el bloque; omítelo si no aplica.
+    replace_id: id de un bloque existente para corregirlo en vez de agregar otro; sin title
+      ni topic_number conserva los suyos.
     """
     context = runtime.context
     topic = None
@@ -80,48 +92,45 @@ async def board_add(
     try:
         validate_block(block)
         samples = await _sample_plot(block)
-        patch = add_block(
-            context.board,
-            block,
-            author=context.author,
-            title=title,
-            samples=samples,
-            topic=topic,
-        )
+        if replace_id:
+            _check_can_replace(context, replace_id)
+            patch = update_block(context.board, replace_id, block, title=title, samples=samples, topic=topic)
+        else:
+            patch = add_block(
+                context.board,
+                block,
+                author=context.author,
+                title=title,
+                samples=samples,
+                topic=topic,
+            )
     except BoardError as error:
         return f"Error: {error}"
     runtime.stream_writer(patch)
-    return f"Bloque agregado: {patch['block']['id']}."
+    action = "reemplazado" if replace_id else "agregado"
+    return f"Bloque {action}: {patch['block']['id']}."
 
 
 @tool
 async def board_edit(
-    action: Literal["update", "remove", "clear"],
+    action: Literal["remove", "clear"],
     runtime: ToolRuntime[TurnContext],
     block_id: str | None = None,
-    block: BoardBlock | None = None,
-    title: str | None = None,
 ) -> str:
-    """Corrige o borra bloques de la pizarra.
+    """Borra bloques de la pizarra. Para corregir uno, usa board_add con replace_id.
 
-    - update: reemplaza el contenido de block_id por block, con el formato de board_add.
-      title cambia el título; si se omite, se conserva.
     - remove: borra block_id.
     - clear: vacía la pizarra; úsalo solo si el alumno lo pide o cambia de tema por completo.
     """
+    # Sin block en la firma: repetir el schema de board_add costaba unos 1500 tokens por llamada.
     board = runtime.context.board
     try:
         if action == "clear":
             patch = clear(board)
         elif not block_id:
             return "Error: indica block_id; consulta los ids con get_board."
-        elif action == "remove":
-            patch = remove_block(board, block_id)
-        elif block is None:
-            return "Error: update necesita block con el contenido nuevo."
         else:
-            validate_block(block)
-            patch = update_block(board, block_id, block, title=title, samples=await _sample_plot(block))
+            patch = remove_block(board, block_id)
     except BoardError as error:
         return f"Error: {error}"
     runtime.stream_writer(patch)
@@ -132,7 +141,7 @@ async def board_edit(
 async def get_board(runtime: ToolRuntime[TurnContext], block_id: str | None = None) -> str:
     """Lista los bloques de la pizarra con id, tipo y título.
 
-    Con block_id devuelve el contenido de ese bloque; léelo antes de corregirlo con board_edit.
+    Con block_id devuelve el contenido de ese bloque; léelo antes de corregirlo con board_add y replace_id.
     """
     board = runtime.context.board
     if block_id is None:
