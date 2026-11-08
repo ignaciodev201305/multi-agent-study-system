@@ -242,7 +242,7 @@ class PlanPromptTests(unittest.TestCase):
 
 class ContextChainSelectionTests(unittest.IsolatedAsyncioTestCase):
     async def native_for(self, capability):
-        with patch("core.graphs.context.build_model"), patch("core.graphs.context.ToolsBuilder"):
+        with patch("core.graphs.context.build_model"), patch("core.graphs.context.build_tools", return_value=[]):
             graph = ContextStudyGraph()
         calls = []
 

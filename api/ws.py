@@ -21,7 +21,8 @@ from api.security import (
     websocket_token,
 )
 from config.settings import WS_MAX_MESSAGE_CHARS
-from core.streaming import execute_astream_graph
+from core.agents.catalog import ARCHETYPES
+from core.streaming import execute_astream_graph, token_text
 from core.study.repository import ProgressRepository
 from core.usage import UsageTracker, session_usage
 
@@ -234,14 +235,23 @@ class _TurnUsage:
         self.sender = sender
         self.thread_id = thread_id
         self.turn_id = uuid4().hex
-        self.tracker = UsageTracker(catalog=state.model_resolver.catalog, on_record=self.flush)
+        self.tracker = UsageTracker(
+            catalog=state.model_resolver.catalog,
+            on_record=self.flush,
+            relay_tools=frozenset(ARCHETYPES),
+        )
         self._saved = 0
+        self._saved_tools = 0
         self._lock = asyncio.Lock()
 
     async def flush(self, _record=None) -> None:
         """Guarda lo pendiente y envía el resumen; un fallo no debe afectar al turno."""
         try:
             async with self._lock:
+                pending_tools = self.tracker.tool_records[self._saved_tools:]
+                if pending_tools:
+                    await self.state.usage_repository.add_tool_records(self.thread_id, self.turn_id, pending_tools)
+                    self._saved_tools += len(pending_tools)
                 pending = self.tracker.records[self._saved:]
                 if not pending:
                     return
@@ -259,6 +269,15 @@ class _TurnUsage:
             })
         except Exception:
             logger.exception("No se pudo guardar el uso thread_id=%s", self.thread_id)
+
+    async def save_relay(self, answer: str) -> None:
+        """Mide cuánto de la respuesta copió el supervisor de sus especialistas; un fallo no afecta al turno."""
+        try:
+            await self.state.usage_repository.add_relay(
+                self.thread_id, self.turn_id, self.tracker.relay_sources, answer
+            )
+        except Exception:
+            logger.exception("No se pudo medir el relevo thread_id=%s", self.thread_id)
 
 
 async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: str, message: str) -> None:
@@ -302,10 +321,12 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
     elif had_plan:
         # Se guarda antes de avisar, porque el cliente refresca el progreso con la respuesta.
         await _save_progress(state.progress_repository, thread_id, result)
+        answer = result["messages"][-1].content
         await sender.send_json({
             "type": "agent_response",
-            "content": result["messages"][-1].content,
+            "content": answer,
         })
+        await usage.save_relay(token_text(answer))
     elif (result or {}).get("study_plan") is None:
         await _send_ws_error(
             sender,

@@ -321,7 +321,7 @@ class GraphUsageTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("core.graphs.session.build_model"),
             patch("core.graphs.context.build_model"),
-            patch("core.graphs.context.ToolsBuilder"),
+            patch("core.graphs.context.build_tools", return_value=[]),
         ):
             return StudyGraph()
 
@@ -374,7 +374,6 @@ class GraphUsageTests(unittest.IsolatedAsyncioTestCase):
             "previous_level": "principiante",
             "approved_context": True,
         })
-        study_graph.context.tools_builder.get_tavily_tools.return_value = []
         study_graph.context.model = _fake_model("context_classifier", _message(input_tokens=70, tool_calls=[{
             "name": "ContextClassification",
             "args": classification.model_dump(),
@@ -385,7 +384,9 @@ class GraphUsageTests(unittest.IsolatedAsyncioTestCase):
         graph = await study_graph.compile_graph(InMemorySaver())
         tracker = UsageTracker()
 
-        await self.run_turn(graph, tracker, {"messages": [HumanMessage(content="derivadas")]})
+        # El clasificador arma su búsqueda web en cada ronda.
+        with patch("core.graphs.context.build_tools", return_value=[]):
+            await self.run_turn(graph, tracker, {"messages": [HumanMessage(content="derivadas")]})
 
         self.assertEqual(
             [(record.role, record.input_tokens) for record in tracker.records],

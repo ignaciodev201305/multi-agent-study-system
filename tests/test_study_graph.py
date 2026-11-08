@@ -68,7 +68,7 @@ class StudyGraphTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("core.graphs.session.build_model"),
             patch("core.graphs.context.build_model"),
-            patch("core.graphs.context.ToolsBuilder"),
+            patch("core.graphs.context.build_tools", return_value=[]),
         ):
             self.study_graph = StudyGraph()
         self.study_graph.context.chain_builder = SimpleNamespace(

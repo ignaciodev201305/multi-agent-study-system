@@ -1,16 +1,19 @@
-"""Registro de tokens y costo por llamada al modelo y su guardado en SQLite."""
+"""Registro de tokens, costo y tools de cada turno, y su guardado en SQLite."""
 
 import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
+from uuid import UUID
 
 import aiosqlite
 from langchain_core.callbacks import AsyncCallbackHandler
 
 from core.llm import MODEL_TAG, ROLE_TAG
 from core.model_catalog import CatalogUnavailable
+from core.streaming import token_text
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,10 @@ UNKNOWN = "desconocido"
 SUPERVISOR_ROLE = "supervisor"
 TOKENS_PER_PRICE_UNIT = 1_000_000
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cached_tokens", "reasoning_tokens")
+# Las tools informan sus fallos como texto que empieza así, sin lanzar excepciones.
+TOOL_ERROR_PREFIX = "Error"
+# Coincidencias más cortas (una fórmula, una frase hecha) no cuentan como texto copiado.
+RELAY_MIN_BLOCK_CHARS = 40
 
 
 @dataclass
@@ -32,6 +39,26 @@ class UsageRecord:
     cost_usd: float | None = None
     cost_estimated: bool = False
     source: str = "turn"
+
+
+@dataclass
+class ToolRecord:
+    """Una llamada a una tool: quién la pidió y si respondió sin error."""
+    agent: str
+    tool: str
+    ok: bool
+    output_chars: int
+
+
+def relayed_chars(sources: list[str], answer: str) -> int:
+    """Cuenta los caracteres de la respuesta copiados de alguna fuente, sin contar dos veces."""
+    copied = [False] * len(answer)
+    for source in sources:
+        matcher = SequenceMatcher(None, source, answer, autojunk=False)
+        for block in matcher.get_matching_blocks():
+            if block.size >= RELAY_MIN_BLOCK_CHARS:
+                copied[block.b:block.b + block.size] = [True] * block.size
+    return sum(copied)
 
 
 def estimate_cost(record: UsageRecord, catalog_entry: dict | None) -> float | None:
@@ -62,13 +89,39 @@ def _reported_cost(metadata: dict, llm_output: dict | None) -> float | None:
 
 
 class UsageTracker(AsyncCallbackHandler):
-    """Acumula el uso de cada llamada; nunca interrumpe el trabajo que observa."""
+    """Acumula el uso de cada llamada y de cada tool; nunca interrumpe el trabajo que observa."""
 
-    def __init__(self, source: str = "turn", catalog=None, on_record=None):
+    def __init__(self, source: str = "turn", catalog=None, on_record=None, relay_tools=frozenset()):
         self.source = source
         self.catalog = catalog
         self.on_record = on_record
         self.records: list[UsageRecord] = []
+        self.tool_records: list[ToolRecord] = []
+        # Lo que devuelven estas tools (los especialistas) se compara con la respuesta final.
+        self.relay_tools = relay_tools
+        self.relay_sources: list[str] = []
+        self._tool_runs: dict[UUID, tuple[str, str]] = {}
+
+    async def on_tool_start(self, serialized, input_str, *, run_id, metadata=None, **kwargs) -> None:
+        """Recuerda qué agente pidió la tool hasta que termine."""
+        agent = (metadata or {}).get("lc_agent_name") or UNKNOWN
+        self._tool_runs[run_id] = (agent, (serialized or {}).get("name") or UNKNOWN)
+
+    async def on_tool_end(self, output, *, run_id, **kwargs) -> None:
+        """Registra la tool; un texto que empieza con Error cuenta como fallo."""
+        try:
+            agent, tool = self._tool_runs.pop(run_id, (UNKNOWN, UNKNOWN))
+            text = token_text(getattr(output, "content", output))
+            self.tool_records.append(ToolRecord(agent, tool, not text.startswith(TOOL_ERROR_PREFIX), len(text)))
+            if tool in self.relay_tools:
+                self.relay_sources.append(text)
+        except Exception:
+            logger.exception("No se pudo registrar una tool")
+
+    async def on_tool_error(self, error, *, run_id, **kwargs) -> None:
+        """Registra la tool que lanzó una excepción."""
+        agent, tool = self._tool_runs.pop(run_id, (UNKNOWN, UNKNOWN))
+        self.tool_records.append(ToolRecord(agent, tool, False, 0))
 
     async def on_llm_end(self, response, *, tags=None, **kwargs) -> None:
         """Registra la llamada y avisa al callback si hay uno."""
@@ -148,6 +201,29 @@ class UsageRepository:
             );
             CREATE INDEX IF NOT EXISTS idx_model_usage_chat
                 ON model_usage (chat_id, created_at);
+            -- Solo conteos: el contenido de las tools no se guarda.
+            CREATE TABLE IF NOT EXISTS tool_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
+                turn_id TEXT NOT NULL,
+                agent TEXT NOT NULL,
+                tool TEXT NOT NULL,
+                ok INTEGER NOT NULL,
+                output_chars INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_tool_usage_turn
+                ON tool_usage (chat_id, turn_id);
+            -- Cuánto de la respuesta final del supervisor repite lo que dijeron los especialistas.
+            CREATE TABLE IF NOT EXISTS turn_relay (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT NOT NULL,
+                turn_id TEXT NOT NULL,
+                specialist_chars INTEGER NOT NULL,
+                answer_chars INTEGER NOT NULL,
+                relayed_chars INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
         await connection.commit()
@@ -190,6 +266,45 @@ class UsageRepository:
             except Exception:
                 await self._connection.rollback()
                 raise
+
+    async def add_tool_records(self, chat_id: str, turn_id: str, records: list[ToolRecord]) -> None:
+        """Guarda las tools de un turno en una transacción."""
+        if not records:
+            return
+        created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        async with self._lock:
+            try:
+                await self._connection.execute("BEGIN IMMEDIATE")
+                await self._connection.executemany(
+                    """
+                    INSERT INTO tool_usage (chat_id, turn_id, agent, tool, ok, output_chars, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (chat_id, turn_id, record.agent, record.tool, int(record.ok), record.output_chars, created_at)
+                        for record in records
+                    ],
+                )
+                await self._connection.commit()
+            except Exception:
+                await self._connection.rollback()
+                raise
+
+    async def add_relay(self, chat_id: str, turn_id: str, sources: list[str], answer: str) -> None:
+        """Guarda cuánto de la respuesta final copió el supervisor de sus especialistas."""
+        if not sources:
+            return
+        copied = await asyncio.to_thread(relayed_chars, sources, answer)
+        created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        async with self._lock:
+            await self._connection.execute(
+                """
+                INSERT INTO turn_relay (chat_id, turn_id, specialist_chars, answer_chars, relayed_chars, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (chat_id, turn_id, sum(len(source) for source in sources), len(answer), copied, created_at),
+            )
+            await self._connection.commit()
 
     async def summary(self, chat_id: str) -> dict:
         """Resume el uso de una sesión: totales, por rol y modelo, último turno y contexto."""

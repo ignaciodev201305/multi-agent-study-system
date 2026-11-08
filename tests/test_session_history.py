@@ -38,7 +38,7 @@ class SessionHistoryTests(unittest.IsolatedAsyncioTestCase):
             patch("core.graphs.session.build_model"),
             patch("core.graphs.session.ChainBuilder"),
             patch("core.graphs.context.build_model"),
-            patch("core.graphs.context.ToolsBuilder"),
+            patch("core.graphs.context.build_tools", return_value=[]),
         ):
             self.study_graph = StudyGraph()
         self.session_graph = self.study_graph.session

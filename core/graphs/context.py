@@ -14,7 +14,7 @@ from core.agents.catalog import catalog_for_factory
 from core.prompts.context import CONTEXT_CLASSIFIER_PROMPT, STUDY_PLAN_JSON_RULES, STUDY_PLAN_PROMPT
 from core.schemas import ContextClassification, StudyPlan
 from core.states import ContextStudyState
-from core.tools import ToolsBuilder
+from core.tools import build_tools
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,6 @@ class ContextStudyGraph:
         self.model = build_model("context_classifier")
         self.factory_model = build_model("factory")
         self.chain_builder = ChainBuilder()
-        self.tools_builder = ToolsBuilder()
     def build_subgraph(self):
         graph = StateGraph(ContextStudyState)
 
@@ -44,7 +43,8 @@ class ContextStudyGraph:
             reaming_rounds = 3 - clarification_round
             logger.debug("Rondas de aclaración restantes: %s", reaming_rounds)
             model = model_for_turn(config, "context_classifier", self.model)
-            agent = create_agent(model, tools=self.tools_builder.get_tavily_tools(),system_prompt=CONTEXT_CLASSIFIER_PROMPT.format(reaming_rounds=reaming_rounds), response_format=ToolStrategy(ContextClassification))
+            # Se crea en cada ronda: Tavily valida la API key al instanciarse y el arranque no debe depender de ella.
+            agent = create_agent(model, tools=build_tools(["web_search"]),system_prompt=CONTEXT_CLASSIFIER_PROMPT.format(reaming_rounds=reaming_rounds), response_format=ToolStrategy(ContextClassification))
 
             response = await agent.ainvoke({"messages": messages})
 

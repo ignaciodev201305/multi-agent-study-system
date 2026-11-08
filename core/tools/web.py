@@ -3,13 +3,8 @@
 from langchain_tavily import TavilySearch
 
 
-def build_web_tools():
-    """Devuelve las herramientas de búsqueda web (Tavily)."""
-    return [TavilySearch()]
-
-
 def build_web_search_tool():
-    """Búsqueda web para el arquetipo investigador, con un nombre estable para el catálogo."""
+    """Búsqueda web del investigador y del clasificador, con un nombre estable para el catálogo."""
     return TavilySearch(
         name="web_search",
         max_results=5,

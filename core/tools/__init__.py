@@ -5,7 +5,7 @@ from core.tools.context import TurnContext
 from core.tools.documents import get_study_material, search_documents
 from core.tools.progress import record_progress
 from core.tools.symbolic import math_tool
-from core.tools.web import build_web_search_tool, build_web_tools
+from core.tools.web import build_web_search_tool
 
 _STATIC_TOOLS = {
     "math": math_tool,
@@ -32,13 +32,4 @@ def build_tools(names) -> list:
     return tools
 
 
-class ToolsBuilder:
-    """
-    Las funciones se encargan de retornar la lista de tools para un agente
-    """
-    def get_tavily_tools(self):
-        """Devuelve las herramientas de búsqueda web para el clasificador de contexto."""
-        return build_web_tools()
-
-
-__all__ = ["TOOL_NAMES", "TurnContext", "ToolsBuilder", "build_tools"]
+__all__ = ["TOOL_NAMES", "TurnContext", "build_tools"]

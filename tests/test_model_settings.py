@@ -356,7 +356,7 @@ class ContextModelTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("core.graphs.session.build_model"),
             patch("core.graphs.context.build_model"),
-            patch("core.graphs.context.ToolsBuilder"),
+            patch("core.graphs.context.build_tools", return_value=[]),
         ):
             study_graph = StudyGraph()
         used = []
