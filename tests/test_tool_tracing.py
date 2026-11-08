@@ -127,6 +127,16 @@ class RepositoryTests(unittest.IsolatedAsyncioTestCase):
             [("t", len(SPECIALIST_ANSWER), len(SPECIALIST_ANSWER))],
         )
 
+    async def test_delete_chat_removes_tools_and_relay_of_that_chat(self):
+        for chat_id in ("c", "otra"):
+            await self.repository.add_tool_records(chat_id, "t", [ToolRecord("explicador", "math", True, 3)])
+            await self.repository.add_relay(chat_id, "t", [SPECIALIST_ANSWER], SPECIALIST_ANSWER)
+
+        await self.repository.delete_chat("c")
+
+        self.assertEqual(await self.rows("SELECT chat_id FROM tool_usage"), [("otra",)])
+        self.assertEqual(await self.rows("SELECT chat_id FROM turn_relay"), [("otra",)])
+
 
 if __name__ == "__main__":
     unittest.main()

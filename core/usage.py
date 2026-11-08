@@ -371,10 +371,17 @@ class UsageRepository:
         }
 
     async def delete_chat(self, chat_id: str) -> None:
-        """Borra el uso de una sesión."""
+        """Borra el uso, las tools y el relevo de una sesión."""
         async with self._lock:
-            await self._connection.execute("DELETE FROM model_usage WHERE chat_id = ?", (chat_id,))
-            await self._connection.commit()
+            try:
+                await self._connection.execute("BEGIN IMMEDIATE")
+                await self._connection.execute("DELETE FROM model_usage WHERE chat_id = ?", (chat_id,))
+                await self._connection.execute("DELETE FROM tool_usage WHERE chat_id = ?", (chat_id,))
+                await self._connection.execute("DELETE FROM turn_relay WHERE chat_id = ?", (chat_id,))
+                await self._connection.commit()
+            except Exception:
+                await self._connection.rollback()
+                raise
 
     async def close(self) -> None:
         """Cierra la conexión con SQLite."""
