@@ -25,6 +25,7 @@ interface SessionViewProps {
   backendUrl: string;
   status: ConnectionStatus;
   isBusy: boolean;
+  deepMode: boolean;
   error?: string;
   graphActivities: GraphActivity[];
   theme: Theme;
@@ -50,6 +51,7 @@ interface SessionViewProps {
   onOpenInPython: (code: string) => void;
   onShareWithTutor: (message: string) => void;
   onComposerDraftApplied: () => void;
+  onToggleDeepMode: () => void;
 }
 
 const phaseText: Record<StudyPhase, string> = {
@@ -63,6 +65,7 @@ export function SessionView({
   backendUrl,
   status,
   isBusy,
+  deepMode,
   error,
   graphActivities,
   theme,
@@ -88,6 +91,7 @@ export function SessionView({
   onOpenInPython,
   onShareWithTutor,
   onComposerDraftApplied,
+  onToggleDeepMode,
 }: SessionViewProps): JSX.Element {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
@@ -181,10 +185,12 @@ export function SessionView({
           title={session.title}
         />
         <Composer
+          deepMode={deepMode}
           draft={composerDraft}
           isBusy={isBusy}
           onDraftApplied={onComposerDraftApplied}
           onSend={onSend}
+          onToggleDeepMode={onToggleDeepMode}
           phase={session.phase}
         />
       </section>

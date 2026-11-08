@@ -49,6 +49,15 @@ El alumno ejecuta Python en el cliente con Pyodide, dentro de un Web Worker. El 
 
 Los detalles están en [client/README.md](client/README.md#python-con-pyodide).
 
+### Modo profundo
+
+El botón «Profundo» del cuadro de mensaje activa, solo para esa sesión, un profesor principal construido con [Deep Agents](https://docs.langchain.com/oss/python/deepagents/overview) (`create_deep_agent`), pensado para cálculos complejos e investigaciones largas. Está apagado por defecto y se apaga al recargar el cliente.
+
+- Planifica el turno con `write_todos` y guarda resultados intermedios en archivos virtuales (`write_file`, `read_file`, `edit_file`, `ls`, `glob`, `grep`). Esos archivos viven solo en memoria durante el turno: no tocan el disco, y el modo no tiene `execute`.
+- Además de los especialistas del plan, delega con `task` en `general-purpose`, un investigador de solo lectura (`math`, `search_documents`, `get_study_material` y `web_search`) que no ve la conversación ni escribe en la pizarra ni en el progreso.
+- Tiene su propio tope: `DEEP_SUPERVISOR_MAX_MODEL_CALLS` llamadas al modelo y `DEEP_SUPERVISOR_RECURSION_LIMIT` pasos. Es más lento y más caro que un turno normal; el panel de uso y `scripts/usage_report.py` muestran su costo, y sus tools aparecen en `tool_usage`.
+- Cambiar el interruptor reconstruye el supervisor de la sesión desde el turno siguiente. En la preparación y las aclaraciones no aplica.
+
 ### Modelos por rol
 
 Desde la interfaz se elige el modelo de cada rol entre los del catálogo de OpenRouter, para todas las sesiones o solo para una. El orden de prioridad es: sesión, global, `MODEL_<ROL>` y valor por defecto. La clave sigue solo en `.env` y nunca llega al cliente.
@@ -129,7 +138,7 @@ cp .env.example .env
 | `TAVILY_API_KEY` | Clave de Tavily para la búsqueda web del clasificador de contexto y del arquetipo investigador. |
 | `APP_TOKEN` | Token local obligatorio. La API lo exige en HTTP (`Authorization: Bearer`) y en el WebSocket (subprotocolo `token.<APP_TOKEN>`); sin él no arranca. Genéralo con `python -c "import secrets; print(secrets.token_hex(32))"` y pégalo en el campo «Token local» de la pantalla de inicio del cliente. |
 
-Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `SUPERVISOR_RECURSION_LIMIT` (40), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8) y `BOARD_MAX_PLOT_FUNCTIONS` (4).
+Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `SUPERVISOR_RECURSION_LIMIT` (40), `DEEP_SUPERVISOR_RECURSION_LIMIT` (150), `DEEP_SUPERVISOR_MAX_MODEL_CALLS` (20), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8) y `BOARD_MAX_PLOT_FUNCTIONS` (4).
 
 Modelos por rol (`context_classifier`, `factory`, `supervisor`, `subagent_light`, `subagent_heavy`, `summarizer`): se cambian sin tocar código con `MODEL_<ROL>`, `TEMPERATURE_<ROL>` y `REASONING_<ROL>` (p. ej. `MODEL_SUPERVISOR=openai/gpt-5.5`). Lo elegido en la interfaz tiene prioridad sobre estas variables. Los embeddings con `MODEL_EMBEDDINGS`.
 

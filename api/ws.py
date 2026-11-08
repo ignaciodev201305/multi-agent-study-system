@@ -157,8 +157,8 @@ async def _close_websocket(websocket: WebSocket, *, code: int, reason: str) -> N
         pass
 
 
-async def _receive_content(websocket: WebSocket, sender: SafeSender) -> str:
-    """Espera un mensaje JSON válido, informando payloads incorrectos al cliente."""
+async def _receive_content(websocket: WebSocket, sender: SafeSender) -> tuple[str, bool]:
+    """Espera un mensaje JSON válido y devuelve su texto y si pide el modo profundo."""
     while True:
         try:
             data = await asyncio.wait_for(
@@ -186,6 +186,16 @@ async def _receive_content(websocket: WebSocket, sender: SafeSender) -> str:
             )
             continue
 
+        deep = data.get("deep", False)
+        if not isinstance(deep, bool):
+            await _send_ws_error(
+                sender,
+                code="invalid_message",
+                content="El campo 'deep' debe ser true o false.",
+                retryable=True,
+            )
+            continue
+
         content = content.strip()
         if len(content) > WS_MAX_MESSAGE_CHARS:
             await _send_ws_error(
@@ -196,7 +206,7 @@ async def _receive_content(websocket: WebSocket, sender: SafeSender) -> str:
             )
             continue
 
-        return content
+        return content, deep
 
 
 async def _heartbeat(sender: SafeSender) -> None:
@@ -280,14 +290,17 @@ class _TurnUsage:
             logger.exception("No se pudo medir el relevo thread_id=%s", self.thread_id)
 
 
-async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: str, message: str) -> None:
+async def _process_message(
+    websocket: WebSocket, sender: SafeSender, thread_id: str, message: str, deep: bool = False
+) -> None:
     """Ejecuta un turno del grafo padre; él decide si contextualiza o estudia."""
     state = websocket.app.state
     # Va en la configuración porque un subgrafo reanudado no recibe el estado nuevo del padre.
     models = await state.model_resolver.resolve(thread_id)
     usage = _TurnUsage(state, sender, thread_id)
     config = {
-        "configurable": {"thread_id": thread_id, "models": models},
+        # El modo profundo solo lo usa el turno de estudio; el contexto y sus interrupciones lo ignoran.
+        "configurable": {"thread_id": thread_id, "models": models, "deep_mode": deep},
         "callbacks": [usage.tracker],
     }
     graph = state.study_graph
@@ -302,8 +315,9 @@ async def _process_message(websocket: WebSocket, sender: SafeSender, thread_id: 
     }
 
     logger.info(
-        "turn start thread_id=%s models=%s",
+        "turn start thread_id=%s deep=%s models=%s",
         thread_id,
+        deep,
         {role: entry["model"] for role, entry in models.items()},
     )
     try:
@@ -346,7 +360,7 @@ async def _run_websocket_session(websocket: WebSocket, sender: SafeSender, threa
     """Procesa mensajes mientras el cliente esté conectado; el lock se toma solo por turno."""
     registry: SessionRegistry = websocket.app.state.session_registry
     while True:
-        message = await _receive_content(websocket, sender)
+        message, deep = await _receive_content(websocket, sender)
         if not registry.rate_limiter.allow(thread_id):
             await _send_ws_error(
                 sender,
@@ -357,7 +371,7 @@ async def _run_websocket_session(websocket: WebSocket, sender: SafeSender, threa
             continue
         try:
             async with registry.turn(thread_id, sender):
-                await _process_message(websocket, sender, thread_id, message)
+                await _process_message(websocket, sender, thread_id, message, deep)
         except _TurnInProgress:
             await _send_ws_error(
                 sender,

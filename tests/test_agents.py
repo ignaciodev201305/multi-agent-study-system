@@ -251,6 +251,65 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(MATH_VERIFY_RULE in prompt, "math" in archetype.tools, name)
 
 
+class _RecordingToolModel(_ToolModel):
+    """Modelo simulado que guarda los nombres de las tools de cada bind_tools."""
+
+    bound: list = []
+
+    def bind_tools(self, tools, **kwargs):
+        self.bound.append({getattr(tool, "name", None) or tool.get("name") or tool["function"]["name"] for tool in tools})
+        return self
+
+
+class DeepSupervisorTests(unittest.IsolatedAsyncioTestCase):
+    def build(self, messages, deep):
+        model = _RecordingToolModel(messages=iter(messages), bound=[])
+        with (
+            patch("core.agents.builder.build_model", return_value=model),
+            patch("core.agents.builder.build_tools", side_effect=_tools_without_web),
+        ):
+            plan = _plan(archetypes=[{"archetype": "explicador", "focus": "Derivadas."}])
+            return model, SupervisorBuilder(plan, deep=deep).build()
+
+    async def test_deep_supervisor_plans_and_delegates_read_only_research(self):
+        model, supervisor = self.build([
+            AIMessage(content="", tool_calls=[{
+                "name": "write_todos",
+                "args": {"todos": [{"content": "Integrar por partes", "status": "in_progress"}]},
+                "id": "call-1",
+            }]),
+            AIMessage(content="", tool_calls=[{
+                "name": "task",
+                "args": {"description": "Calcula la integral de x*e^x.", "subagent_type": "general-purpose"},
+                "id": "call-2",
+            }]),
+            AIMessage(content="Informe: (x-1)e^x + C."),
+            AIMessage(content="Respuesta final."),
+        ], deep=True)
+
+        result = await supervisor.ainvoke(
+            {"messages": [SystemMessage(content="contexto"), HumanMessage(content="integra")]},
+            context=TurnContext(session_id="s", study_plan=_plan()),
+        )
+
+        self.assertEqual(result["messages"][-1].content, "Respuesta final.")
+        self.assertIn("Informe: (x-1)e^x + C.", [message.content for message in result["messages"]])
+        main_tools = model.bound[0]
+        self.assertLessEqual({"write_todos", "write_file", "read_file", "task", "explicador", "board_add"}, main_tools)
+        self.assertNotIn("execute", main_tools)
+        research_tools = next(names for names in model.bound if "task" not in names)
+        self.assertIn("math", research_tools)
+        self.assertFalse({"board_add", "board_edit", "record_progress", "execute"} & research_tools)
+
+    async def test_normal_supervisor_has_no_deep_tools(self):
+        model, supervisor = self.build([AIMessage(content="Hola.")], deep=False)
+        await supervisor.ainvoke(
+            {"messages": [HumanMessage(content="hola")]},
+            context=TurnContext(session_id="s", study_plan=_plan()),
+        )
+        self.assertFalse({"write_todos", "write_file", "task"} & model.bound[0])
+
+
 def _tools_without_web(names):
     from core.tools import build_tools
     return build_tools([name for name in names if name != "web_search"])

@@ -35,6 +35,8 @@ export default function App(): JSX.Element {
   const openInPython = useStudyStore((state) => state.openInPython);
   const setComposerDraft = useStudyStore((state) => state.setComposerDraft);
   const clearComposerDraft = useStudyStore((state) => state.clearComposerDraft);
+  const deepModes = useStudyStore((state) => state.deepModes);
+  const toggleDeepMode = useStudyStore((state) => state.toggleDeepMode);
   const createSession = useStudyStore((state) => state.createSession);
   const deleteSession = useStudyStore((state) => state.deleteSession);
   const selectSession = useStudyStore((state) => state.selectSession);
@@ -84,9 +86,11 @@ export default function App(): JSX.Element {
           docsPanelOpen={docsPanelOpen}
           error={errors[activeSession.id]}
           graphActivities={graphActivities}
+          deepMode={Boolean(deepModes[activeSession.id])}
           isBusy={(connectionStates[activeSession.id] ?? 'idle') === 'connecting'}
           onBack={goHome}
           onComposerDraftApplied={clearComposerDraft}
+          onToggleDeepMode={() => toggleDeepMode(activeSession.id)}
           onDismissError={() => clearError(activeSession.id)}
           onDocsPanelOpenChange={setDocsPanelOpen}
           onDocumentProcessed={() => void resyncSession(activeSession.id)}

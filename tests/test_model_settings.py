@@ -312,6 +312,16 @@ class SupervisorRebuildTests(unittest.TestCase):
             models = {"supervisor": {"model": TOOLS_MODEL, "effort": "high"}}
             self.assertIsNot(first, self.graph._get_or_build_supervisor("s", "plan", models))
 
+    def test_rebuilds_if_deep_mode_changes(self):
+        with patch("core.graphs.session.SupervisorBuilder") as builder:
+            builder.return_value.build.side_effect = lambda: object()
+            normal = self.graph._get_or_build_supervisor("s", "plan", self.models())
+            self.assertIsNone(self.graph._get_cached_supervisor("s", self.models(), True))
+            deep = self.graph._get_or_build_supervisor("s", "plan", self.models(), True)
+        self.assertIsNot(normal, deep)
+        self.assertEqual(builder.call_args.args, ("plan", self.models(), True))
+        self.assertIs(self.graph._get_cached_supervisor("s", self.models(), True), deep)
+
     def test_cached_lookup_ignores_stale_models(self):
         with patch("core.graphs.session.SupervisorBuilder") as builder:
             builder.return_value.build.side_effect = lambda: object()
@@ -404,7 +414,7 @@ class SessionTurnModelTests(unittest.IsolatedAsyncioTestCase):
         built = []
 
         class _Builder:
-            def __init__(self, study_plan, models=None):
+            def __init__(self, study_plan, models=None, deep=False):
                 built.append((models or {}).get("supervisor", {}).get("model"))
 
             def build(self):

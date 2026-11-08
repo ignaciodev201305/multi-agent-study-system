@@ -12,6 +12,7 @@ from langgraph.graph import END
 from config.settings import (
     SESSION_HISTORY_KEEP_MESSAGES,
     SESSION_HISTORY_MAX_MESSAGES,
+    DEEP_SUPERVISOR_RECURSION_LIMIT,
     SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES,
     SUPERVISOR_RECURSION_LIMIT,
 )
@@ -29,11 +30,16 @@ DUE_REVIEWS_MAX_ENTRIES = 5
 SUPERVISOR_ROLES = ("supervisor", "subagent_light", "subagent_heavy")
 
 
-def models_fingerprint(models: dict | None) -> tuple:
-    """Resume los modelos del supervisor para detectar si cambiaron."""
+def models_fingerprint(models: dict | None, deep: bool = False) -> tuple:
+    """Resume los modelos y el modo del supervisor para detectar si cambiaron."""
     models = models or {}
     entries = [models.get(role) or {} for role in SUPERVISOR_ROLES]
-    return tuple((entry.get("model"), entry.get("effort")) for entry in entries)
+    return (*((entry.get("model"), entry.get("effort")) for entry in entries), deep)
+
+
+def deep_mode(config: dict) -> bool:
+    """Indica si el alumno pidió el modo profundo para este turno."""
+    return bool(config["configurable"].get("deep_mode"))
 
 
 class SessionStudyGraph:
@@ -46,30 +52,30 @@ class SessionStudyGraph:
         self.supervisors_lock = Lock()
         self.supervisors_cache_max_entries = SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES
 
-    def _fresh_supervisor(self, thread_id, models):
-        """Devuelve el supervisor en caché si sigue usando los mismos modelos."""
+    def _fresh_supervisor(self, thread_id, models, deep):
+        """Devuelve el supervisor en caché si sigue usando los mismos modelos y modo."""
         supervisor = self.supervisors.get(thread_id)
-        if supervisor is None or self.supervisor_fingerprints.get(thread_id) != models_fingerprint(models):
+        if supervisor is None or self.supervisor_fingerprints.get(thread_id) != models_fingerprint(models, deep):
             return None
         self.supervisors.move_to_end(thread_id)
         return supervisor
 
-    def _get_cached_supervisor(self, thread_id, models=None):
+    def _get_cached_supervisor(self, thread_id, models=None, deep=False):
         """Devuelve el supervisor de una sesión y actualiza su posición LRU."""
         with self.supervisors_lock:
-            return self._fresh_supervisor(thread_id, models)
+            return self._fresh_supervisor(thread_id, models, deep)
 
-    def _get_or_build_supervisor(self, thread_id, study_plan, models=None):
+    def _get_or_build_supervisor(self, thread_id, study_plan, models=None, deep=False):
         """Obtiene o reconstruye un supervisor y mantiene acotada la caché LRU."""
         with self.supervisors_lock:
-            supervisor = self._fresh_supervisor(thread_id, models)
+            supervisor = self._fresh_supervisor(thread_id, models, deep)
             if supervisor is not None:
                 return supervisor
 
-            supervisor = SupervisorBuilder(study_plan, models).build()
+            supervisor = SupervisorBuilder(study_plan, models, deep).build()
             self.supervisors[thread_id] = supervisor
             self.supervisors.move_to_end(thread_id)
-            self.supervisor_fingerprints[thread_id] = models_fingerprint(models)
+            self.supervisor_fingerprints[thread_id] = models_fingerprint(models, deep)
             while len(self.supervisors) > self.supervisors_cache_max_entries:
                 evicted, _ = self.supervisors.popitem(last=False)
                 self.supervisor_fingerprints.pop(evicted, None)
@@ -110,14 +116,14 @@ class SessionStudyGraph:
         def build_supervisor(state, config):
             """Construye y registra en memoria el supervisor de la sesión."""
             thread_id = config["configurable"]["thread_id"]
-            self._get_or_build_supervisor(thread_id, state["study_plan"], turn_models(config))
+            self._get_or_build_supervisor(thread_id, state["study_plan"], turn_models(config), deep_mode(config))
             return {}
 
         def check_supervisor(state, config):
             """Decide si el supervisor de la sesión ya está listo o debe construirse."""
             thread_id = config["configurable"]["thread_id"]
 
-            if self._get_cached_supervisor(thread_id, turn_models(config)) is None:
+            if self._get_cached_supervisor(thread_id, turn_models(config), deep_mode(config)) is None:
                 return "build_supervisor"
             return "chat"
 
@@ -125,7 +131,8 @@ class SessionStudyGraph:
             """Invoca al supervisor con el contexto compuesto y el historial."""
             thread_id = config["configurable"]["thread_id"]
 
-            supervisor = self._get_or_build_supervisor(thread_id, state["study_plan"], turn_models(config))
+            deep = deep_mode(config)
+            supervisor = self._get_or_build_supervisor(thread_id, state["study_plan"], turn_models(config), deep)
             # La copia solo llega al checkpoint si el turno termina bien.
             board = Board.model_validate(deepcopy(state.get("board") or {}))
             turn_context = TurnContext(
@@ -136,7 +143,7 @@ class SessionStudyGraph:
             )
             response = await supervisor.ainvoke(
                 {"messages": [compose_session_context(state)] + list(state["messages"])},
-                config={"recursion_limit": SUPERVISOR_RECURSION_LIMIT},
+                config={"recursion_limit": DEEP_SUPERVISOR_RECURSION_LIMIT if deep else SUPERVISOR_RECURSION_LIMIT},
                 context=turn_context,
             )
             result = {

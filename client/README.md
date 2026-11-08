@@ -111,9 +111,11 @@ No hay Content Security Policy en `index.html`, `nginx.conf` ni Electron. Si se 
 
 ## Protocolo e integración
 
-El cliente envía `{ "content": "..." }` por la ruta `/ws/{thread_id}` y reconoce `thinking`, `human_input_request`, `context_processed`, `agent_response`, `board_patch`, `status` y `error`. Los fragmentos `thinking` se acumulan y se muestran en vivo en la conversación; las respuestas también se guardan localmente en el renderer. En el backend, el estado de cada sesión se conserva mediante checkpoints persistidos en SQLite, por lo que la memoria no depende de que la conexión WebSocket o el proceso Python permanezcan activos.
+El cliente envía `{ "content": "...", "deep": false }` por la ruta `/ws/{thread_id}` y reconoce `thinking`, `human_input_request`, `context_processed`, `agent_response`, `board_patch`, `status` y `error`. Los fragmentos `thinking` se acumulan y se muestran en vivo en la conversación; las respuestas también se guardan localmente en el renderer. En el backend, el estado de cada sesión se conserva mediante checkpoints persistidos en SQLite, por lo que la memoria no depende de que la conexión WebSocket o el proceso Python permanezcan activos.
 
 Los fragmentos `thinking` se acumulan durante 100 ms antes de llegar al store, porque renderizar la sesión con cada uno bloquearía la interfaz. Se agrupan por `node` y `step` cuando esos campos están disponibles, y se muestran como actividad en curso o completada. La interfaz etiqueta el grafo de contexto o el grafo de estudio según la fase de la sesión. También se aceptan eventos con metadatos anidados o serializados delante del texto en `content`.
+
+`deep` es opcional y booleano: `true` pide el modo profundo para ese turno, y el backend rechaza otro tipo con `invalid_message`. El cliente lo envía según el botón «Profundo» de la sesión, que vive en el store sin persistir, y solo en la fase de estudio.
 
 La respuesta `agent_response` contiene solo `content`, sin el nombre del subagente. La interfaz etiqueta esas respuestas como «Supervisor» y las preguntas de setup como «Preparación»; para distinguir tutores concretos, el backend debe incluir metadatos de agente en sus eventos.
 

@@ -3,17 +3,25 @@
 import logging
 from dataclasses import replace
 
+from deepagents import create_deep_agent
 from langchain.agents import create_agent
+from langchain.agents.middleware import TodoListMiddleware
 from langchain.messages import HumanMessage
 from langchain.tools import ToolRuntime, tool
 from langgraph.errors import GraphBubbleUp
 
-from config.settings import SPECIALIST_MAX_MODEL_CALLS, SUPERVISOR_MAX_MODEL_CALLS
+from config.settings import (
+    DEEP_SUPERVISOR_MAX_MODEL_CALLS,
+    SPECIALIST_MAX_MODEL_CALLS,
+    SUPERVISOR_MAX_MODEL_CALLS,
+)
 from core.agents.catalog import ARCHETYPES, Archetype, archetype_prompt
 from core.agents.middleware import CallLimitMiddleware, PromptCacheMiddleware
 from core.board import BOARD_CONTEXT_MAX_ENTRIES, board_inventory
 from core.llm import build_model
 from core.prompts.session import (
+    DEEP_MODE_RULE,
+    DEEP_RESEARCH_PROMPT,
     DOCUMENT_TOOL_RULES,
     MATH_FORMAT_RULE,
     MATH_VERIFY_RULE,
@@ -33,6 +41,12 @@ SUPERVISOR_TOOLS = (
     "board_add",
     "board_edit",
     "get_board",
+)
+# Solo lectura: el general-purpose no ve la conversación, así que no escribe pizarra ni progreso.
+DEEP_RESEARCH_TOOLS = ("math", "search_documents", "get_study_material", "web_search")
+DEEP_RESEARCH_DESCRIPTION = (
+    "Investiga o calcula una parte del problema en un contexto aparte y devuelve un informe. "
+    "No ve la conversación ni escribe en la pizarra: pásale una tarea autocontenida."
 )
 ADDED_BLOCKS_NOTE = "Nota para el profesor (no la muestres al alumno): el especialista ya agregó a la pizarra:"
 BOARD_CONTEXT_NOTE = (
@@ -105,25 +119,57 @@ def _subagent_tool(archetype: Archetype, focus: str, models: dict):
 class SupervisorBuilder:
     """Instancia el supervisor de la sesión a partir de su plan de estudio."""
 
-    def __init__(self, study_plan: StudyPlan, models: dict | None = None):
+    def __init__(self, study_plan: StudyPlan, models: dict | None = None, deep: bool = False):
         self.study_plan = study_plan
         self.models = models or {}
+        self.deep = deep
 
     def build(self):
-        """Crea el supervisor con sus especialistas y tools."""
+        """Crea el supervisor con sus especialistas y tools; en modo profundo, como deep agent."""
         specialists = [
             _subagent_tool(ARCHETYPES[selected.archetype], selected.focus, self.models)
             for selected in self.study_plan.archetypes
         ]
+        model = build_model("supervisor", resolved=self.models.get("supervisor"))
+        tools = specialists + build_tools(SUPERVISOR_TOOLS)
+        if self.deep:
+            return self._build_deep(model, tools)
         return create_agent(
-            build_model("supervisor", resolved=self.models.get("supervisor")),
-            tools=specialists + build_tools(SUPERVISOR_TOOLS),
+            model,
+            tools=tools,
             system_prompt=self.system_prompt(),
             context_schema=TurnContext,
             name="profesor_principal",
             middleware=[
                 CallLimitMiddleware(SUPERVISOR_MAX_MODEL_CALLS, SUPERVISOR_LIMIT_MESSAGE, "profesor_principal"),
                 PromptCacheMiddleware(),
+            ],
+        )
+
+    def _build_deep(self, model, tools):
+        """Crea el supervisor con plan, archivos en memoria del turno y un general-purpose de solo lectura."""
+        research = {
+            "name": "general-purpose",
+            "description": DEEP_RESEARCH_DESCRIPTION,
+            "system_prompt": f"{DEEP_RESEARCH_PROMPT}\n\n{MATH_FORMAT_RULE}\n{MATH_VERIFY_RULE}",
+            "tools": build_tools(DEEP_RESEARCH_TOOLS),
+            "middleware": [
+                CallLimitMiddleware(SPECIALIST_MAX_MODEL_CALLS, SPECIALIST_LIMIT_NOTE, "general-purpose"),
+                PromptCacheMiddleware(),
+            ],
+        }
+        # Sin backend explícito usa StateBackend: los archivos viven en el estado del turno y no hay execute.
+        return create_deep_agent(
+            model,
+            tools=tools,
+            system_prompt=f"{self.system_prompt()}\n{DEEP_MODE_RULE}",
+            subagents=[research],
+            context_schema=TurnContext,
+            name="profesor_principal",
+            middleware=[
+                CallLimitMiddleware(DEEP_SUPERVISOR_MAX_MODEL_CALLS, SUPERVISOR_LIMIT_MESSAGE, "profesor_principal"),
+                PromptCacheMiddleware(),
+                TodoListMiddleware(),
             ],
         )
 

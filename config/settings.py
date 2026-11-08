@@ -94,6 +94,9 @@ SUPERVISOR_RECURSION_LIMIT = max(5, int(os.environ.get("SUPERVISOR_RECURSION_LIM
 # Llamadas al modelo por turno; la última se hace sin tools para que el agente cierre con una respuesta.
 SUPERVISOR_MAX_MODEL_CALLS = max(2, int(os.environ.get("SUPERVISOR_MAX_MODEL_CALLS", "8")))
 SPECIALIST_MAX_MODEL_CALLS = max(2, int(os.environ.get("SPECIALIST_MAX_MODEL_CALLS", "6")))
+# Límites del supervisor en modo profundo: planifica y encadena más pasos en un mismo turno.
+DEEP_SUPERVISOR_RECURSION_LIMIT = max(5, int(os.environ.get("DEEP_SUPERVISOR_RECURSION_LIMIT", "150")))
+DEEP_SUPERVISOR_MAX_MODEL_CALLS = max(2, int(os.environ.get("DEEP_SUPERVISOR_MAX_MODEL_CALLS", "20")))
 
 # Límites de la pizarra de cada sesión.
 BOARD_MAX_BLOCKS = max(1, int(os.environ.get("BOARD_MAX_BLOCKS", "60")))

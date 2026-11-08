@@ -495,22 +495,22 @@ export class BackendConnection {
     return !this.hasFailed && (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN);
   }
 
-  send(content: string): void {
+  send(content: string, deep: boolean): void {
     if (this.socket.readyState !== WebSocket.OPEN) {
       this.fail('La conexión con el backend no está disponible.');
       return;
     }
-    this.socket.send(JSON.stringify({ content }));
+    this.socket.send(JSON.stringify({ content, deep }));
     this.restartTimeout();
   }
 
-  sendWhenReady(content: string): void {
+  sendWhenReady(content: string, deep: boolean): void {
     if (this.socket.readyState === WebSocket.OPEN) {
-      this.send(content);
+      this.send(content, deep);
       return;
     }
     if (this.socket.readyState === WebSocket.CONNECTING) {
-      this.socket.addEventListener('open', () => this.send(content), { once: true });
+      this.socket.addEventListener('open', () => this.send(content, deep), { once: true });
     }
   }
 
@@ -642,7 +642,7 @@ export class BackendConnection {
 export class BackendConnections {
   private readonly connections = new Map<string, { url: string; connection: BackendConnection }>();
 
-  send(sessionId: string, baseUrl: string, content: string, callbacks: BackendCallbacks): void {
+  send(sessionId: string, baseUrl: string, content: string, deep: boolean, callbacks: BackendCallbacks): void {
     let targetUrl: string;
     try {
       targetUrl = websocketUrl(baseUrl, sessionId);
@@ -653,14 +653,14 @@ export class BackendConnections {
 
     const current = this.connections.get(sessionId);
     if (current?.url === targetUrl && current.connection.isUsable) {
-      current.connection.sendWhenReady(content);
+      current.connection.sendWhenReady(content, deep);
       return;
     }
 
     try {
       const connection = new BackendConnection(targetUrl, callbacks);
       this.connections.set(sessionId, { url: targetUrl, connection });
-      connection.sendWhenReady(content);
+      connection.sendWhenReady(content, deep);
     } catch {
       callbacks.onError('No se pudo abrir la conexión WebSocket con el backend.');
     }

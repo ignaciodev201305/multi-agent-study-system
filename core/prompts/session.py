@@ -31,6 +31,25 @@ DOCUMENTOS Y HERRAMIENTAS:
 - No inventes contenido que no aparezca en los documentos. Si no hay resultados, dilo.
 """
 
+# Se agrega al supervisor cuando el alumno activa el modo profundo.
+DEEP_MODE_RULE = """
+MODO PROFUNDO (el alumno pidió un trabajo a fondo en este turno):
+- Antes de empezar, arma un plan con write_todos y mantenlo al día mientras avanzas.
+- Guarda resultados intermedios largos en archivos (write_file) y reléelos con read_file en lugar
+  de repetirlos; esos archivos solo duran este turno.
+- Delega en tus especialistas o en general-purpose las partes que necesiten investigar o
+  calcular por separado; general-purpose no ve la conversación ni escribe en la pizarra.
+- Verifica cada resultado con math antes de darlo por bueno.
+- Termina con una respuesta completa al alumno: el plan y los archivos no los ve.
+"""
+
+# Instrucciones del general-purpose del modo profundo; no ve la conversación.
+DEEP_RESEARCH_PROMPT = (
+    "Eres un asistente de investigación y cálculo del profesor. Resuelve la tarea que te pasa, "
+    "verifica los cálculos con math y devuelve un informe breve y autocontenido con el resultado "
+    "y cómo lo obtuviste. No hables con el alumno."
+)
+
 SUPERVISOR_PROMPT = """Eres el profesor principal de una sesión de estudio sobre {subject}.
 
 CÓMO CONDUCIR ESTA SESIÓN:

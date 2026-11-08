@@ -49,7 +49,7 @@ class SessionStudyGraphCacheTests(unittest.TestCase):
             rebuilt = graph._get_or_build_supervisor("session", context)
 
         self.assertIsNot(original, rebuilt)
-        builder.assert_called_with(context, None)
+        builder.assert_called_with(context, None, False)
 
     def test_deleting_session_removes_its_cached_supervisor(self):
         graph = self.make_graph(max_entries=2)

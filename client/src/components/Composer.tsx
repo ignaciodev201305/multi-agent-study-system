@@ -4,9 +4,11 @@ import styles from '../App.module.css';
 interface ComposerProps {
   phase: 'setup' | 'clarification' | 'study';
   isBusy: boolean;
+  deepMode: boolean;
   draft?: string;
   onDraftApplied: () => void;
   onSend: (content: string) => void;
+  onToggleDeepMode: () => void;
 }
 
 const placeholders: Record<ComposerProps['phase'], string> = {
@@ -20,7 +22,7 @@ const resize = (target: HTMLTextAreaElement): void => {
   target.style.height = `${Math.min(target.scrollHeight, 180)}px`;
 };
 
-export function Composer({ phase, isBusy, draft, onDraftApplied, onSend }: ComposerProps): JSX.Element {
+export function Composer({ phase, isBusy, deepMode, draft, onDraftApplied, onSend, onToggleDeepMode }: ComposerProps): JSX.Element {
   const input = useRef<HTMLTextAreaElement>(null);
 
   // Rellena el texto para que el alumno lo revise; nunca se envía solo.
@@ -67,6 +69,17 @@ export function Composer({ phase, isBusy, draft, onDraftApplied, onSend }: Compo
           ref={input}
           rows={1}
         />
+        {phase === 'study' && (
+          <button
+            aria-pressed={deepMode}
+            className={styles.deepToggle}
+            onClick={onToggleDeepMode}
+            title="Planifica, investiga y verifica en varios pasos"
+            type="button"
+          >
+            Profundo
+          </button>
+        )}
         <button className={styles.sendButton} disabled={isBusy} type="submit" aria-label="Enviar mensaje">
           {isBusy ? (
             <span className={styles.buttonSpinner} aria-hidden="true" />
@@ -79,7 +92,7 @@ export function Composer({ phase, isBusy, draft, onDraftApplied, onSend }: Compo
       </div>
       <div className={styles.composerHint}>
         <span>Enter para enviar · Shift + Enter para salto de línea</span>
-        {phase === 'study' && <span>Respuestas en Markdown</span>}
+        {phase === 'study' && <span>{deepMode ? 'Modo profundo: más lento y más costoso' : 'Respuestas en Markdown'}</span>}
       </div>
     </form>
   );

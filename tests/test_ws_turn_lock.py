@@ -202,6 +202,23 @@ class WebSocketModelTests(unittest.TestCase):
             _receive_until(websocket, "agent_response")
         self.assertEqual(graph.configs[0]["configurable"]["models"], {"supervisor": {"model": "acme/modelo"}})
 
+    def test_turn_receives_deep_mode(self):
+        client, graph = _make_client(self)
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "a", "deep": True})
+            _receive_until(websocket, "agent_response")
+            websocket.send_json({"content": "b"})
+            _receive_until(websocket, "agent_response")
+        self.assertEqual([config["configurable"]["deep_mode"] for config in graph.configs], [True, False])
+
+    def test_rejects_non_boolean_deep_mode(self):
+        client, graph = _make_client(self)
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "a", "deep": "si"})
+            events = _receive_until(websocket, "error")
+        self.assertEqual(events[-1]["code"], "invalid_message")
+        self.assertEqual(graph.calls, [])
+
 
 class WebSocketProgressTests(unittest.TestCase):
     UPDATE = {"topic_number": 1, "topic": "Definición", "status": "dominado", "evidence": "Bien."}

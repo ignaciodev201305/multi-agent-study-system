@@ -6,7 +6,12 @@ from unittest.mock import patch
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
-from config.settings import SESSION_HISTORY_KEEP_MESSAGES, SESSION_HISTORY_MAX_MESSAGES
+from config.settings import (
+    DEEP_SUPERVISOR_RECURSION_LIMIT,
+    SESSION_HISTORY_KEEP_MESSAGES,
+    SESSION_HISTORY_MAX_MESSAGES,
+    SUPERVISOR_RECURSION_LIMIT,
+)
 from core.graphs import StudyGraph
 from core.streaming import token_text
 
@@ -25,9 +30,11 @@ class _FakeChain:
 class _FakeSupervisor:
     def __init__(self):
         self.received = []
+        self.configs = []
 
     async def ainvoke(self, values, config=None, context=None):
         self.received.append(values["messages"])
+        self.configs.append(config)
         last = values["messages"][-1].content
         return {"messages": values["messages"] + [AIMessage(content=f"respuesta a {last}")]}
 
@@ -45,7 +52,8 @@ class SessionHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.chain = _FakeChain()
         self.session_graph.chain_builder.build_chain.return_value = self.chain
         self.supervisor = _FakeSupervisor()
-        self.session_graph._get_or_build_supervisor = lambda *_: self.supervisor
+        self.built_modes = []
+        self.session_graph._get_or_build_supervisor = lambda *args: self.built_modes.append(args[-1]) or self.supervisor
         self.session_graph._get_cached_supervisor = lambda *_: self.supervisor
         self.graph = await self.study_graph.compile_graph(checkpointer=InMemorySaver())
         self.config = {"configurable": {"thread_id": "t"}}
@@ -91,6 +99,18 @@ class SessionHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("RESUMEN DE LA SESION", messages[0].content)
         self.assertEqual(sum(isinstance(message, SystemMessage) for message in messages), 1)
         self.assertGreaterEqual(len(messages) - 1, SESSION_HISTORY_KEEP_MESSAGES)
+
+    async def test_deep_mode_uses_deep_supervisor_and_limit(self):
+        for deep in (True, False):
+            await self.graph.ainvoke(
+                {"messages": [HumanMessage(content="m")], "study_plan": "plan"},
+                {"configurable": {"thread_id": "t", "deep_mode": deep}},
+            )
+        self.assertEqual(self.built_modes, [True, False])
+        self.assertEqual(
+            [config["recursion_limit"] for config in self.supervisor.configs],
+            [DEEP_SUPERVISOR_RECURSION_LIMIT, SUPERVISOR_RECURSION_LIMIT],
+        )
 
 
 class TokenTextTests(unittest.TestCase):

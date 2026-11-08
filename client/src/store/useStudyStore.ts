@@ -140,6 +140,9 @@ interface StudyState extends PersistedState {
   boards: Record<string, Board | undefined>;
   usage: Record<string, UsageTotals | undefined>;
   composerDraft: ComposerDraft | null;
+  // Modo profundo por sesión; se apaga al recargar para no dejar turnos caros activados.
+  deepModes: Record<string, boolean | undefined>;
+  toggleDeepMode: (sessionId: string) => void;
   setDocsPanelOpen: (open: boolean) => void;
   setSidePanelOpen: (open: boolean) => void;
   setSidePanelWidth: (width: number) => void;
@@ -188,6 +191,10 @@ export const useStudyStore = create<StudyState>()(
       boards: {},
       usage: {},
       composerDraft: null,
+      deepModes: {},
+      toggleDeepMode: (sessionId) => set((state) => ({
+        deepModes: { ...state.deepModes, [sessionId]: !state.deepModes[sessionId] },
+      })),
       setDocsPanelOpen: (docsPanelOpen) => set({ docsPanelOpen }),
       setSidePanelOpen: (sidePanelOpen) => set({ sidePanelOpen }),
       setSidePanelWidth: (sidePanelWidth) => set({ sidePanelWidth }),
@@ -306,7 +313,8 @@ export const useStudyStore = create<StudyState>()(
           graphActivities,
         }));
 
-        backendConnections.send(session.id, state.backendUrl, content, {
+        const deep = session.phase === 'study' && Boolean(state.deepModes[session.id]);
+        backendConnections.send(session.id, state.backendUrl, content, deep, {
           onOpen: () => get().setConnectionStatus(session.id, 'connecting'),
           onResync: () => void get().resyncSession(session.id),
           onEvent: (event) => get().receiveEvent(session.id, event),
@@ -529,6 +537,7 @@ export const useStudyStore = create<StudyState>()(
           graphActivities: {},
           boards: {},
           usage: {},
+          deepModes: {},
         };
       },
     },
