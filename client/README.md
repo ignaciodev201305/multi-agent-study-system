@@ -1,6 +1,6 @@
 # Estudio Multiagente
 
-Aplicación de escritorio para Linux construida con Electron, Vite, React y TypeScript. El renderer se comunica con el backend existente mediante WebSocket; el proceso principal de Electron no inicia ni modifica el servidor. También puede usarse solo en el navegador, sin Electron.
+Aplicación de escritorio para Linux construida con Electron, Vite, React y TypeScript. El renderer se comunica con el backend existente mediante WebSocket. Si nada escucha en `127.0.0.1:8000`, el proceso principal de Electron inicia el backend del repositorio y lo detiene al cerrar la app (ver [Backend automático](#backend-automático)). También puede usarse solo en el navegador, sin Electron.
 
 ## Requisitos
 
@@ -18,7 +18,7 @@ npm install
 
 ## Iniciar en desarrollo
 
-En una terminal, desde la raíz del repositorio, inicia el backend:
+Con Electron no hace falta iniciar el backend aparte. Para usar el modo `--reload` o solo el navegador, inícialo en una terminal, desde la raíz del repositorio:
 
 ```bash
 .venv/bin/uvicorn api.app:app --reload --port 8000
@@ -44,9 +44,14 @@ npx vite --host 127.0.0.1
 
 La aplicación usa por defecto `ws://127.0.0.1:8000/ws/{thread_id}`. La dirección base se puede cambiar en la pantalla de inicio, en el campo «Backend WebSocket». El servidor debe estar disponible antes de enviar el primer mensaje.
 
-## Token local
+## Token
 
-El backend exige su `APP_TOKEN` en toda conexión. Escríbelo en el campo «Token local» de la pantalla de inicio: se guarda en el `localStorage` del renderer, viaja en la cabecera `Authorization: Bearer` en HTTP y como subprotocolo `token.<APP_TOKEN>` en el WebSocket, porque el navegador no permite cabeceras en ese canal.
+El backend exige su `APP_TOKEN` en toda conexión.
+
+- En Electron, si «Backend WebSocket» apunta a esta máquina (`127.0.0.1`, `localhost` o `[::1]`), la app lee `APP_TOKEN` del `.env` de la carpeta del repositorio guardada en `config.json` y lo usa sin mostrar el campo.
+- En el navegador, o con un backend en otro equipo, aparece el campo «Token del servidor» para escribirlo a mano.
+
+El token se guarda en el `localStorage` del renderer, viaja en la cabecera `Authorization: Bearer` en HTTP y como subprotocolo `token.<APP_TOKEN>` en el WebSocket, porque el navegador no permite cabeceras en ese canal.
 
 ## Comprobar y compilar
 
@@ -63,13 +68,31 @@ npm start
 
 La versión compilada se sirve como `app://bundle`, un esquema propio de Electron, porque el backend no acepta el Origin `null` que tendría una página cargada desde `file://`.
 
-## Empaquetar para Linux
+## Backend automático
+
+Al abrir, la app muestra «Iniciando backend…» y comprueba `127.0.0.1:8000`:
+
+- Si ya responde (Uvicorn a mano o Docker), lo usa y no lanza otro.
+- Si no, lanza `.venv/bin/python -m uvicorn api.app:app` (en Windows, `.venv\Scripts\python.exe`) desde la carpeta del repositorio, con su `.env`. La primera vez pide elegir esa carpeta, que debe tener `.venv` y `api/app.py`, y la guarda en `config.json`.
+- Espera hasta 60 s. Si no arranca, avisa con la ruta del log y abre igual la interfaz.
+- Al cerrar la app detiene solo el backend que lanzó.
+
+`config.json` y `backend.log` quedan en `~/.config/Estudio Multiagente/` (en Windows, `%APPDATA%\Estudio Multiagente\`). Para elegir otra carpeta del repositorio, borra `config.json`.
+
+## Instalar en Fedora
+
+El paquete se compila en la misma máquina Linux, después de `git pull`. El repositorio tiene que tener su `.venv` con `requirements.txt` instalado y su `.env`, como indica el [README principal](../README.md).
 
 ```bash
+sudo dnf install rpm-build
+npm install
 npm run package:linux
+sudo dnf install ./release/*.rpm
 ```
 
-Electron Builder genera AppImage y `.deb` dentro de `client/release/`.
+`package:linux` genera un `.rpm` y un AppImage en `client/release/`. El `.rpm` deja «Estudio Multiagente» en Actividades con su ícono (`build/icon.png`), desde donde se puede anclar al dock. Para actualizarla, repite los dos últimos comandos.
+
+No hace falta escribir el token: se toma del `.env` del repositorio.
 
 La configuración usa Electron 44 y electron-builder 27.0.0-alpha.10.
 

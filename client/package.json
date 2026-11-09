@@ -1,8 +1,15 @@
 {
   "name": "sistema-estudio-multiagente",
+  "productName": "Estudio Multiagente",
   "version": "1.0.0",
   "private": true,
   "description": "Aplicación de escritorio para sesiones de estudio multiagente",
+  "homepage": "https://github.com/ignaciodev201305/multi-agent-study-system",
+  "author": {
+    "name": "ignaciodev201305",
+    "email": "ignaciodev201305@gmail.com"
+  },
+  "desktopName": "com.estudio.multiagente.desktop",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"npm:electron:dev\"",
@@ -10,7 +17,7 @@
     "build:electron": "tsc -p electron/tsconfig.json",
     "build": "npm run build:electron && vite build",
     "start": "electron .",
-    "package:linux": "npm run build && electron-builder --linux AppImage deb",
+    "package:linux": "npm run build && electron-builder --linux",
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -48,9 +55,11 @@
     ],
     "linux": {
       "category": "Education",
+      "icon": "build/icon.png",
+      "executableName": "estudio-multiagente",
       "target": [
-        "AppImage",
-        "deb"
+        "rpm",
+        "AppImage"
       ]
     }
   },

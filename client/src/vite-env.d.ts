@@ -1,8 +1,10 @@
 /// <reference types="vite/client" />
 
 interface Window {
-  desktop: {
+  // Solo existe dentro de Electron; en el navegador es undefined.
+  desktop?: {
     platform: string;
     electronVersion: string;
+    getLocalToken: () => Promise<string>;
   };
 }

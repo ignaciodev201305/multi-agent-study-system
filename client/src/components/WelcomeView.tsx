@@ -15,6 +15,7 @@ interface WelcomeViewProps {
   onBackendUrlChange: (url: string) => void;
   onAuthTokenChange: (token: string) => void;
   onToggleTheme: () => void;
+  usesLocalToken: boolean;
 }
 
 const phaseText: Record<StudyPhase, string> = {
@@ -46,6 +47,7 @@ export function WelcomeView({
   onBackendUrlChange,
   onAuthTokenChange,
   onToggleTheme,
+  usesLocalToken,
 }: WelcomeViewProps): JSX.Element {
   const orderedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
@@ -92,7 +94,7 @@ export function WelcomeView({
     <div className={styles.homeShell}>
       <header className={styles.homeHeader}>
         <div className={styles.brand}>
-          <span className={styles.brandMark} aria-hidden="true">EM</span>
+          <img className={styles.brandMark} src="/logo.png" alt="" />
           <span>Estudio Multiagente</span>
         </div>
         <div className={styles.topbarActions}>
@@ -130,16 +132,22 @@ export function WelcomeView({
               type="url"
               value={backendUrl}
             />
-            <label className={styles.backendLabel} htmlFor="backend-token">Token local (APP_TOKEN)</label>
-            <input
-              autoCapitalize="off"
-              autoComplete="off"
-              id="backend-token"
-              onChange={(event) => onAuthTokenChange(event.target.value)}
-              spellCheck={false}
-              type="password"
-              value={authToken}
-            />
+            {usesLocalToken ? (
+              <span className={styles.backendLabel}>Token: tomado del .env local</span>
+            ) : (
+              <>
+                <label className={styles.backendLabel} htmlFor="backend-token">Token del servidor (APP_TOKEN)</label>
+                <input
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  id="backend-token"
+                  onChange={(event) => onAuthTokenChange(event.target.value)}
+                  spellCheck={false}
+                  type="password"
+                  value={authToken}
+                />
+              </>
+            )}
           </div>
         </section>
 

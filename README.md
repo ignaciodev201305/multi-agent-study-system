@@ -136,7 +136,7 @@ cp .env.example .env
 |---|---|
 | `OPENAI_API_KEY` | Clave de OpenRouter, usada por el backend como clave de un proveedor compatible con OpenAI. |
 | `TAVILY_API_KEY` | Clave de Tavily para la búsqueda web del clasificador de contexto y del arquetipo investigador. |
-| `APP_TOKEN` | Token local obligatorio. La API lo exige en HTTP (`Authorization: Bearer`) y en el WebSocket (subprotocolo `token.<APP_TOKEN>`); sin él no arranca. Genéralo con `python -c "import secrets; print(secrets.token_hex(32))"` y pégalo en el campo «Token local» de la pantalla de inicio del cliente. |
+| `APP_TOKEN` | Token local obligatorio. La API lo exige en HTTP (`Authorization: Bearer`) y en el WebSocket (subprotocolo `token.<APP_TOKEN>`); sin él no arranca. Genéralo con `python -c "import secrets; print(secrets.token_hex(32))"` La app de Electron lo lee de este `.env` cuando el backend es local; en el navegador o con un servidor remoto, pégalo en el campo «Token del servidor» de la pantalla de inicio. |
 
 Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `SUPERVISOR_RECURSION_LIMIT` (40), `DEEP_SUPERVISOR_RECURSION_LIMIT` (150), `DEEP_SUPERVISOR_MAX_MODEL_CALLS` (20), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8) y `BOARD_MAX_PLOT_FUNCTIONS` (4).
 
@@ -192,7 +192,7 @@ python -m venv .venv
 .venv\Scripts\python -m uvicorn api.app:app --port 8000
 ```
 
-El cliente arranca aparte, con Electron o solo en el navegador: ver [client/README.md](client/README.md).
+El cliente arranca aparte, con Electron o solo en el navegador: ver [client/README.md](client/README.md). La app de Electron levanta este backend sola si no está corriendo, y en Fedora se instala como `.rpm` con acceso en el menú de aplicaciones.
 
 **Migración:** las sesiones anteriores no se migran. Si vienes de una versión con `context_study.db`, `session_study.db` o `document_processor.db`, limpia `data/` (con Docker, `docker compose down -v`) antes de arrancar.
 

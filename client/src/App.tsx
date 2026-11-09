@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { SessionView } from './components/SessionView';
 import { WelcomeView } from './components/WelcomeView';
 import { useStudyStore } from './store/useStudyStore';
@@ -7,6 +7,16 @@ import type { Board, GraphActivity } from './types';
 
 const EMPTY_GRAPH_ACTIVITIES: GraphActivity[] = [];
 const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+// El token del .env local solo vale para un backend en esta misma máquina.
+const isLocalBackend = (backendUrl: string): boolean => {
+  try {
+    return LOCAL_HOSTS.has(new URL(backendUrl).hostname);
+  } catch {
+    return false;
+  }
+};
 
 export default function App(): JSX.Element {
   const sessions = useStudyStore((state) => state.sessions);
@@ -51,6 +61,16 @@ export default function App(): JSX.Element {
   const activeSession = sessions.find((session) => session.id === activeSessionId)
     ?? (draftSession && draftSession.id === activeSessionId ? draftSession : undefined);
   const isSessionView = view === 'session' && Boolean(activeSession);
+  const [localToken, setLocalToken] = useState('');
+  const usesLocalToken = localToken !== '' && isLocalBackend(backendUrl);
+
+  useEffect(() => {
+    void window.desktop?.getLocalToken().then(setLocalToken);
+  }, []);
+
+  useEffect(() => {
+    if (usesLocalToken && authToken !== localToken) setAuthToken(localToken);
+  }, [authToken, localToken, setAuthToken, usesLocalToken]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent): void => {
@@ -124,6 +144,7 @@ export default function App(): JSX.Element {
           onBackendUrlChange={setBackendUrl}
           sessions={sessions}
           theme={theme}
+          usesLocalToken={usesLocalToken}
         />
       )}
     </div>

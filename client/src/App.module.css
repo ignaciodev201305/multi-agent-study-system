@@ -47,7 +47,7 @@
 .homeShell { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .homeHeader { display: flex; height: 58px; flex: 0 0 58px; align-items: center; justify-content: space-between; padding: 0 26px; border-bottom: 1px solid var(--border); }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 650; letter-spacing: -.2px; }
-.brandMark { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .02em; }
+.brandMark { display: block; width: 26px; height: 26px; border-radius: 6px; }
 
 .homeBody {
   display: grid;
