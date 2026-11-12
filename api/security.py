@@ -104,7 +104,7 @@ class TurnRateLimiter:
         self._turns.pop(thread_id, None)
 
 
-# Global y no por IP: detrás del proxy todas las peticiones llegan desde loopback.
+# Global y no por IP: el uso es personal y un token válido siempre pasa.
 _AUTH_FAILURES_KEY = "auth"
 _auth_failures = TurnRateLimiter(max_turns=AUTH_MAX_FAILURES_PER_MINUTE)
 
