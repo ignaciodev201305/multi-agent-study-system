@@ -3,11 +3,14 @@ import { SessionView } from './components/SessionView';
 import { WelcomeView } from './components/WelcomeView';
 import { useStudyStore } from './store/useStudyStore';
 import styles from './App.module.css';
-import type { Board, GraphActivity } from './types';
+import type { Board, ChatMessage, GraphActivity } from './types';
 
 const EMPTY_GRAPH_ACTIVITIES: GraphActivity[] = [];
+const EMPTY_MESSAGES: ChatMessage[] = [];
 const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+// Evita una consulta por tecla al escribir la dirección o el token.
+const SESSIONS_RELOAD_DELAY_MS = 400;
 
 // El token del .env local solo vale para un backend en esta misma máquina.
 const isLocalBackend = (backendUrl: string): boolean => {
@@ -20,6 +23,9 @@ const isLocalBackend = (backendUrl: string): boolean => {
 
 export default function App(): JSX.Element {
   const sessions = useStudyStore((state) => state.sessions);
+  const sessionsStatus = useStudyStore((state) => state.sessionsStatus);
+  const sessionsError = useStudyStore((state) => state.sessionsError);
+  const messages = useStudyStore((state) => state.messages[state.activeSessionId] ?? EMPTY_MESSAGES);
   const activeSessionId = useStudyStore((state) => state.activeSessionId);
   const view = useStudyStore((state) => state.view);
   const draftSession = useStudyStore((state) => state.draftSession);
@@ -54,7 +60,7 @@ export default function App(): JSX.Element {
   const setTheme = useStudyStore((state) => state.setTheme);
   const setBackendUrl = useStudyStore((state) => state.setBackendUrl);
   const setAuthToken = useStudyStore((state) => state.setAuthToken);
-  const addDocument = useStudyStore((state) => state.addDocument);
+  const loadSessions = useStudyStore((state) => state.loadSessions);
   const sendMessage = useStudyStore((state) => state.sendMessage);
   const clearError = useStudyStore((state) => state.clearError);
   const resyncSession = useStudyStore((state) => state.resyncSession);
@@ -71,6 +77,11 @@ export default function App(): JSX.Element {
   useEffect(() => {
     if (usesLocalToken && authToken !== localToken) setAuthToken(localToken);
   }, [authToken, localToken, setAuthToken, usesLocalToken]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadSessions(), SESSIONS_RELOAD_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [authToken, backendUrl, loadSessions]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent): void => {
@@ -122,7 +133,7 @@ export default function App(): JSX.Element {
           onSidePanelTabChange={setSidePanelTab}
           onSidePanelWidthChange={setSidePanelWidth}
           onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          onUploaded={(document) => addDocument(activeSession.id, document)}
+          messages={messages}
           pythonCode={pythonCode}
           session={activeSession}
           sidePanelOpen={sidePanelOpen}
@@ -142,7 +153,10 @@ export default function App(): JSX.Element {
           onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           onAuthTokenChange={setAuthToken}
           onBackendUrlChange={setBackendUrl}
+          onRetryLoad={() => void loadSessions()}
           sessions={sessions}
+          sessionsError={sessionsError}
+          sessionsStatus={sessionsStatus}
           theme={theme}
           usesLocalToken={usesLocalToken}
         />

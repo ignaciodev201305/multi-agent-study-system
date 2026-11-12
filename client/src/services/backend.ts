@@ -12,7 +12,10 @@ import type {
   ModelInfo,
   ModelRole,
   ResolvedModels,
+  ServerChatMessage,
   SessionUsage,
+  StudyPhase,
+  StudySession,
   ThinkingMetadata,
   UsageTotals,
 } from '../types';
@@ -174,6 +177,50 @@ export const listChatPdfs = async (
   return documents;
 };
 
+const STUDY_PHASES: readonly string[] = ['setup', 'clarification', 'study'];
+
+const parseChat = (value: unknown): StudySession | null => {
+  if (!isRecord(value)) return null;
+  const { chat_id: id, title, phase, created_at: createdAt, updated_at: updatedAt, document_count: documentCount } = value;
+  if (
+    typeof id !== 'string' || typeof title !== 'string' || typeof phase !== 'string' || !STUDY_PHASES.includes(phase)
+    || typeof createdAt !== 'string' || typeof updatedAt !== 'string' || typeof documentCount !== 'number'
+  ) return null;
+  return {
+    id,
+    title,
+    phase: phase as StudyPhase,
+    createdAt: Date.parse(createdAt),
+    updatedAt: Date.parse(updatedAt),
+    documentCount,
+  };
+};
+
+export const fetchChats = async (baseUrl: string): Promise<StudySession[]> => {
+  let response: Response;
+  try {
+    response = await fetch(httpUrl(baseUrl, '/chats'), { cache: 'no-store', headers: authHeaders() });
+  } catch {
+    throw new Error('No se pudo conectar con el backend.');
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok || !isRecord(payload) || !Array.isArray(payload.chats)) {
+    throw new Error('No se pudieron consultar las sesiones. Revisa la dirección y el token del backend.');
+  }
+  return payload.chats.map(parseChat).filter((chat): chat is StudySession => chat !== null);
+};
+
+const parseServerMessage = (value: unknown): ServerChatMessage | null => {
+  if (!isRecord(value)) return null;
+  const { id, role, agent, content, created_at: createdAt } = value;
+  if (
+    typeof id !== 'string' || typeof content !== 'string' || typeof createdAt !== 'string'
+    || (role !== 'user' && role !== 'assistant' && role !== 'system')
+    || (agent !== null && typeof agent !== 'string')
+  ) return null;
+  return { id, role, agent, content, created_at: createdAt };
+};
+
 export const fetchChatSnapshot = async (
   baseUrl: string,
   sessionId: string,
@@ -188,11 +235,16 @@ export const fetchChatSnapshot = async (
     throw new Error('No se pudo consultar el historial de la sesión.');
   }
   const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok || typeof payload !== 'object' || payload === null || !('messages' in payload)) {
+  if (!response.ok || !isRecord(payload) || !Array.isArray(payload.messages)) {
     throw new Error('No se pudo consultar el historial de la sesión.');
   }
-  const snapshot = payload as ChatSnapshot;
-  return { ...snapshot, board: parseBoard(snapshot.board), usage: parseUsageTotals(snapshot.usage) };
+  const snapshot = payload as unknown as ChatSnapshot;
+  return {
+    ...snapshot,
+    messages: payload.messages.map(parseServerMessage).filter((message): message is ServerChatMessage => message !== null),
+    board: parseBoard(snapshot.board),
+    usage: parseUsageTotals(snapshot.usage),
+  };
 };
 
 export const fetchChatUsage = async (baseUrl: string, sessionId: string): Promise<SessionUsage> => {
@@ -240,7 +292,11 @@ export const fetchDueReviews = async (baseUrl: string): Promise<DueReview[]> => 
   if (!response.ok || !isRecord(payload) || !Array.isArray(payload.reviews)) {
     throw new Error('No se pudieron consultar los repasos.');
   }
-  return payload.reviews as DueReview[];
+  return payload.reviews.filter(
+    (review): review is DueReview => isRecord(review) && typeof review.chat_id === 'string'
+      && typeof review.chat_title === 'string' && typeof review.topic === 'string'
+      && typeof review.topic_number === 'number',
+  );
 };
 
 const requestModels = async <T>(url: string, init: RequestInit, key: string, fallback: string): Promise<T> => {
@@ -402,26 +458,10 @@ const parseUsageTotals = (value: unknown): UsageTotals | undefined => {
   };
 };
 
-const parseThinkingMetadata = (value: unknown): ThinkingMetadata | undefined => {
-  if (typeof value === 'string') {
-    const nodeMatch = value.match(/(?:langgraph_node|node)['"]?\s*:\s*['"]([^'"]+)['"]/);
-    const stepMatch = value.match(/(?:langgraph_step|step)['"]?\s*:\s*(\d+)/);
-    const metadata: ThinkingMetadata = {};
-    if (nodeMatch) metadata.node = nodeMatch[1];
-    if (stepMatch) metadata.step = Number(stepMatch[1]);
-    return metadata.node || metadata.step !== undefined ? metadata : undefined;
-  }
-
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  const node = typeof record.langgraph_node === 'string'
-    ? record.langgraph_node
-    : typeof record.node === 'string' ? record.node : undefined;
-  const rawStep = record.langgraph_step ?? record.step;
-  const step = typeof rawStep === 'number'
-    ? rawStep
-    : typeof rawStep === 'string' && /^\d+$/.test(rawStep) ? Number(rawStep) : undefined;
-
+// El servidor manda node y step como campos del evento.
+const parseThinkingMetadata = (record: Record<string, unknown>): ThinkingMetadata | undefined => {
+  const node = typeof record.node === 'string' ? record.node : undefined;
+  const step = typeof record.step === 'number' ? record.step : undefined;
   return node || step !== undefined ? { node, step } : undefined;
 };
 
@@ -435,19 +475,7 @@ const parseBackendEvent = (value: unknown): BackendEvent | null => {
   if (typeof content !== 'string') return null;
 
   if (eventType === 'thinking') {
-    let thinkingContent = content;
-    let metadata = parseThinkingMetadata(value);
-    if (!metadata && 'metadata' in value) metadata = parseThinkingMetadata(value.metadata);
-
-    if (!metadata) {
-      const separator = thinkingContent.indexOf('\n');
-      if (separator !== -1) {
-        metadata = parseThinkingMetadata(thinkingContent.slice(0, separator));
-        if (metadata) thinkingContent = thinkingContent.slice(separator + 1);
-      }
-    }
-
-    return { type: 'thinking', content: thinkingContent, metadata };
+    return { type: 'thinking', content, metadata: parseThinkingMetadata(value as Record<string, unknown>) };
   }
   if (eventType === 'human_input_request') return { type: 'human_input_request', content };
   if (eventType === 'context_processed') {
@@ -460,10 +488,6 @@ const parseBackendEvent = (value: unknown): BackendEvent | null => {
     const retryable = (value as { retryable?: unknown }).retryable;
     if (typeof rawCode !== 'string' || typeof retryable !== 'boolean') return null;
     return { type: 'error', code: rawCode, content, retryable };
-  }
-  // Compatibilidad temporal con backends que todavía envían el evento anterior.
-  if (eventType === 'context_failed') {
-    return { type: 'error', code: 'context_failed', content, retryable: true };
   }
   if (eventType === 'agent_response') return { type: 'agent_response', content };
   if (eventType === 'status') return { type: 'status', content };

@@ -436,6 +436,14 @@ class DocumentRepository:
             )
             return [dict(row) for row in await cursor.fetchall()]
 
+    async def count_by_chat(self) -> dict[str, int]:
+        """Cuenta los documentos de cada sesión."""
+        async with self._lock:
+            cursor = await self._connection.execute(
+                "SELECT chat_id, COUNT(*) AS total FROM documents GROUP BY chat_id"
+            )
+            return {row["chat_id"]: row["total"] for row in await cursor.fetchall()}
+
     async def close(self) -> None:
         """Cierra la conexión SQLite del repositorio."""
         await self._connection.close()

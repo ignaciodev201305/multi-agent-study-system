@@ -28,20 +28,13 @@ export interface ChatMessage {
   createdAt: number;
 }
 
-export interface UploadedDocument {
-  id: string;
-  filename: string;
-  documentType: DocumentType;
-  uploadedAt: number;
-}
-
 export interface StudySession {
   id: string;
   title: string;
   phase: StudyPhase;
-  messages: ChatMessage[];
-  documents: UploadedDocument[];
+  createdAt: number;
   updatedAt: number;
+  documentCount: number;
 }
 
 export interface GraphActivity {
@@ -181,6 +174,7 @@ export interface ChatProgress {
 
 export interface DueReview {
   chat_id: string;
+  chat_title: string;
   topic_number: number;
   topic: string;
   status: ProgressStatus;
@@ -231,8 +225,11 @@ export type BackendEvent =
   | { type: 'status'; content: string };
 
 export interface ServerChatMessage {
-  role: 'user' | 'assistant';
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  agent: string | null;
   content: string;
+  created_at: string;
 }
 
 export interface ChatSnapshot {

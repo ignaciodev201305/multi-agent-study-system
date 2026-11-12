@@ -1,4 +1,4 @@
-"""Endpoints HTTP de chats: historial para resincronizar, borrado y PDFs."""
+"""Endpoints HTTP de chats: listado, transcripción para resincronizar, borrado y PDFs."""
 
 import hashlib
 import logging
@@ -9,11 +9,11 @@ from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import JSONResponse
-from langchain.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
 
 from api.security import validate_chat_id
 from config.settings import (
+    CHAT_MESSAGES_MAX_ENTRIES,
     DATA_DIRECTORY,
     MAX_DOCUMENTS_PER_CHAT,
     MAX_PDF_BYTES_PER_CHAT,
@@ -31,6 +31,9 @@ from documents.storage import SessionManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Sesiones que devuelve el listado.
+CHATS_LIST_LIMIT = 200
 
 
 class ModelSelection(BaseModel):
@@ -54,9 +57,17 @@ class EffortSelection(BaseModel):
     effort: str | None = Field(default=None, min_length=1, max_length=20)
 
 
+@router.get("/chats")
+async def list_chats_endpoint(request: Request):
+    """Lista las sesiones, de la más reciente a la más antigua, con su cantidad de documentos."""
+    chats = await request.app.state.chat_repository.list_chats(CHATS_LIST_LIMIT)
+    counts = await request.app.state.document_repository.count_by_chat()
+    return {"chats": [{**chat, "document_count": counts.get(chat["chat_id"], 0)} for chat in chats]}
+
+
 @router.get("/chats/{chat_id}/messages")
 async def list_chat_messages_endpoint(chat_id: str, request: Request):
-    """Devuelve el estado checkpointeado para que el cliente se resincronice al reconectar."""
+    """Devuelve la transcripción y el estado del grafo para que el cliente se resincronice."""
     validate_chat_id(chat_id)
     config = {"configurable": {"thread_id": chat_id}}
 
@@ -71,14 +82,8 @@ async def list_chat_messages_endpoint(chat_id: str, request: Request):
         phase = "setup"
     pending_question = snapshot.interrupts[0].value if phase == "clarification" else None
 
-    messages = [
-        {
-            "role": "user" if isinstance(message, HumanMessage) else "assistant",
-            "content": message.content,
-        }
-        for message in snapshot.values.get("messages", [])
-        if isinstance(message, (HumanMessage, AIMessage)) and isinstance(message.content, str)
-    ]
+    stored = await request.app.state.chat_repository.list_messages(chat_id, CHAT_MESSAGES_MAX_ENTRIES)
+    messages = [{**message, "id": str(message["id"])} for message in stored]
     return {
         "chat_id": chat_id,
         "phase": phase,
@@ -117,7 +122,9 @@ async def get_chat_progress_endpoint(chat_id: str, request: Request):
 async def list_due_reviews_endpoint(request: Request, limit: int = Query(default=20, ge=1, le=100)):
     """Lista los repasos vencidos de todas las sesiones."""
     reviews = await request.app.state.progress_repository.list_due(datetime.now(timezone.utc), limit)
-    return {"reviews": reviews}
+    titles = await request.app.state.chat_repository.titles([review["chat_id"] for review in reviews])
+    # Los repasos de sesiones sin fila (anteriores a la transcripción) no se muestran.
+    return {"reviews": [{**review, "chat_title": titles[review["chat_id"]]} for review in reviews if review["chat_id"] in titles]}
 
 
 def _check_role(role: str | None) -> None:
@@ -238,6 +245,7 @@ async def delete_chat_endpoint(chat_id: str, request: Request):
     try:
         await request.app.state.document_repository.delete_chat(chat_id)
         await request.app.state.progress_repository.delete_chat(chat_id)
+        await request.app.state.chat_repository.delete_chat(chat_id)
         await request.app.state.model_settings.delete_chat(chat_id)
         await request.app.state.usage_repository.delete_chat(chat_id)
         await request.app.state.study_graph.checkpointer.adelete_thread(chat_id)

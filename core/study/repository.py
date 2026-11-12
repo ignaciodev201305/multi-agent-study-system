@@ -21,7 +21,7 @@ class ProgressUpdate(TypedDict):
     evidence: str
 
 
-def _timestamp(moment: datetime) -> str:
+def timestamp(moment: datetime) -> str:
     """Normaliza la fecha a UTC para que el texto se pueda ordenar."""
     return moment.astimezone(timezone.utc).isoformat(timespec="seconds")
 
@@ -109,8 +109,8 @@ class ProgressRepository:
                 update["topic"],
                 update["status"],
                 box,
-                _timestamp(due_at),
-                _timestamp(now),
+                timestamp(due_at),
+                timestamp(now),
             ),
         )
         await self._connection.execute(
@@ -118,7 +118,7 @@ class ProgressRepository:
             INSERT INTO topic_reviews (chat_id, topic_number, status, evidence, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (chat_id, update["topic_number"], update["status"], update["evidence"], _timestamp(now)),
+            (chat_id, update["topic_number"], update["status"], update["evidence"], timestamp(now)),
         )
 
     async def list_for_chat(self, chat_id: str) -> list[dict]:
@@ -173,7 +173,7 @@ class ProgressRepository:
                 ORDER BY due_at, chat_id, topic_number
                 LIMIT ?
                 """,
-                (_timestamp(now), limit),
+                (timestamp(now), limit),
             )
             return [dict(row) for row in await cursor.fetchall()]
 

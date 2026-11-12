@@ -1,16 +1,17 @@
 import { useRef, useState } from 'react';
 import { listChatPdfs, uploadPdf } from '../services/backend';
-import type { DocumentProcessingStatus, DocumentType, UploadedDocument } from '../types';
+import type { BackendDocument, DocumentProcessingStatus, DocumentType } from '../types';
 import styles from '../App.module.css';
 
 interface DocsPanelProps {
   sessionId: string;
   backendUrl: string;
-  documents: UploadedDocument[];
+  documents: BackendDocument[];
   locked?: boolean;
   open: boolean;
   onClose: () => void;
-  onUploaded: (document: UploadedDocument) => void;
+  // Se llama cuando el servidor ya registró el documento, para volver a pedir la lista.
+  onUploaded: () => void;
   // Procesar un documento gasta aunque falle.
   onProcessed: () => void;
 }
@@ -76,12 +77,6 @@ export function DocsPanel({ sessionId, backendUrl, documents, locked = false, op
         throw new Error('El backend devolvió un estado de procesamiento no válido.');
       }
 
-      onUploaded({
-        id: uploaded.document_id,
-        filename: uploaded.original_filename ?? selectedFile.name,
-        documentType: uploaded.document_type,
-        uploadedAt: Date.now(),
-      });
       setSelectedFile(null);
       if (fileInput.current) fileInput.current.value = '';
     } catch (uploadError: unknown) {
@@ -89,6 +84,7 @@ export function DocsPanel({ sessionId, backendUrl, documents, locked = false, op
     } finally {
       setUploading(false);
       setUploadStatus(null);
+      onUploaded();
       onProcessed();
     }
   };
@@ -185,7 +181,7 @@ export function DocsPanel({ sessionId, backendUrl, documents, locked = false, op
       ) : (
         <ul className={styles.docsList}>
           {documents.map((document) => (
-            <li className={styles.docItem} key={document.id}>
+            <li className={styles.docItem} key={document.document_id}>
               <span className={styles.docIcon} aria-hidden="true">
                 <svg viewBox="0 0 16 16" fill="none">
                   <path d="M4 1.8h5l3 3v9.4H4z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.1" />
@@ -193,8 +189,11 @@ export function DocsPanel({ sessionId, backendUrl, documents, locked = false, op
                 </svg>
               </span>
               <span className={styles.docInfo}>
-                <span className={styles.docName} title={document.filename}>{document.filename}</span>
-                <span className={styles.docMeta}>{typeLabel[document.documentType]}</span>
+                <span className={styles.docName} title={document.original_filename}>{document.original_filename}</span>
+                <span className={styles.docMeta}>
+                  {typeLabel[document.document_type]}
+                  {document.status !== 'ready' && ` · ${processingStatusText[document.status]}`}
+                </span>
               </span>
             </li>
           ))}

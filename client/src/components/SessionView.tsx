@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { listChatPdfs } from '../services/backend';
 import { Composer } from './Composer';
 import { Conversation } from './Conversation';
 import { DocsPanel } from './DocsPanel';
@@ -7,21 +8,23 @@ import { StudySidePanel } from './StudySidePanel';
 import { UsageIndicator } from './UsageIndicator';
 import { UsagePanel } from './UsagePanel';
 import type {
+  BackendDocument,
   BlockFocus,
   Board,
+  ChatMessage,
   ConnectionStatus,
   GraphActivity,
   SidePanelTab,
   StudyPhase,
   StudySession,
   Theme,
-  UploadedDocument,
   UsageTotals,
 } from '../types';
 import styles from '../App.module.css';
 
 interface SessionViewProps {
   session: StudySession;
+  messages: ChatMessage[];
   backendUrl: string;
   status: ConnectionStatus;
   isBusy: boolean;
@@ -42,7 +45,6 @@ interface SessionViewProps {
   onSend: (content: string) => void;
   onDismissError: () => void;
   onDocsPanelOpenChange: (open: boolean) => void;
-  onUploaded: (document: UploadedDocument) => void;
   onDocumentProcessed: () => void;
   onSidePanelOpenChange: (open: boolean) => void;
   onSidePanelTabChange: (tab: SidePanelTab) => void;
@@ -62,6 +64,7 @@ const phaseText: Record<StudyPhase, string> = {
 
 export function SessionView({
   session,
+  messages,
   backendUrl,
   status,
   isBusy,
@@ -82,7 +85,6 @@ export function SessionView({
   onSend,
   onDismissError,
   onDocsPanelOpenChange,
-  onUploaded,
   onDocumentProcessed,
   onSidePanelOpenChange,
   onSidePanelTabChange,
@@ -97,6 +99,7 @@ export function SessionView({
   const [usageOpen, setUsageOpen] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState(false);
   const [focusRequest, setFocusRequest] = useState<BlockFocus | null>(null);
+  const [documents, setDocuments] = useState<BackendDocument[]>([]);
   const focused = panelExpanded && sidePanelOpen;
 
   // Estable para que el chat no vuelva a procesar su Markdown.
@@ -106,6 +109,14 @@ export function SessionView({
     setFocusRequest({ blockId });
   }, [onSidePanelOpenChange, onSidePanelTabChange]);
   const dialogOpen = modelsOpen || usageOpen;
+
+  const refreshDocuments = useCallback((): void => {
+    listChatPdfs(backendUrl, session.id).then(setDocuments).catch(() => undefined);
+  }, [backendUrl, session.id]);
+
+  useEffect(() => setDocuments([]), [session.id]);
+
+  useEffect(() => refreshDocuments(), [docsPanelOpen, refreshDocuments]);
 
   useEffect(() => {
     if (!focused || dialogOpen) return undefined;
@@ -124,11 +135,11 @@ export function SessionView({
     >
       <DocsPanel
         backendUrl={backendUrl}
-        documents={session.documents}
-        locked={!session.messages.some((message) => message.role === 'user')}
+        documents={documents}
+        locked={!messages.some((message) => message.role === 'user')}
         onClose={() => onDocsPanelOpenChange(false)}
         onProcessed={onDocumentProcessed}
-        onUploaded={onUploaded}
+        onUploaded={refreshDocuments}
         open={docsPanelOpen}
         sessionId={session.id}
       />
@@ -157,7 +168,7 @@ export function SessionView({
                 onClick={() => onDocsPanelOpenChange(!docsPanelOpen)}
                 type="button"
               >
-                Material{session.documents.length > 0 ? ` (${session.documents.length})` : ''}
+                Material{documents.length > 0 ? ` (${documents.length})` : ''}
               </button>
             )}
             <button
@@ -178,7 +189,7 @@ export function SessionView({
           error={error}
           graphActivities={graphActivities}
           isThinking={isBusy}
-          messages={session.messages}
+          messages={messages}
           onBlockLink={openBlock}
           onDismissError={onDismissError}
           phase={session.phase}

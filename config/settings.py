@@ -57,6 +57,8 @@ DOCUMENT_MAX_ATTEMPTS = max(1, int(os.environ.get("DOCUMENT_MAX_ATTEMPTS", "3"))
 SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES = max(
     1, int(os.environ.get("SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES", "100"))
 )
+# Mensajes de la transcripción que se devuelven por sesión.
+CHAT_MESSAGES_MAX_ENTRIES = max(1, int(os.environ.get("CHAT_MESSAGES_MAX_ENTRIES", "500")))
 PDF_DIRECTORY = "pdfs"
 CHROMA_DIRECTORY = "chroma"
 

@@ -759,6 +759,7 @@ class BoardStudyGraphTests(unittest.IsolatedAsyncioTestCase):
         progress_repository = SimpleNamespace(list_for_chat=AsyncMock(return_value=[]))
         state = SimpleNamespace(
             study_graph=self.graph,
+            chat_repository=SimpleNamespace(list_messages=AsyncMock(return_value=[])),
             progress_repository=progress_repository,
             usage_repository=None,
             model_resolver=None,

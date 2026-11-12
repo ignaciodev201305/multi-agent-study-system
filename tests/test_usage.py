@@ -440,6 +440,7 @@ class WebSocketUsageTests(RepositoryCase):
         return SimpleNamespace(
             study_graph=graph,
             document_repository=SimpleNamespace(list_ready_with_summaries=AsyncMock(return_value=[])),
+            chat_repository=SimpleNamespace(add_message=AsyncMock()),
             progress_repository=SimpleNamespace(
                 list_for_chat=AsyncMock(return_value=[]),
                 apply_updates=AsyncMock(),
@@ -567,6 +568,7 @@ class UsageRoutesTests(unittest.TestCase):
         app.state.model_resolver = SimpleNamespace(catalog=_catalog(ENTRY))
         app.state.progress_repository = SimpleNamespace(delete_chat=AsyncMock(), list_for_chat=AsyncMock(return_value=[]))
         app.state.document_repository = SimpleNamespace(delete_chat=AsyncMock())
+        app.state.chat_repository = SimpleNamespace(list_messages=AsyncMock(return_value=[]), delete_chat=AsyncMock())
         app.state.model_settings = SimpleNamespace(delete_chat=AsyncMock())
         app.state.study_graph = SimpleNamespace(
             aget_state=AsyncMock(return_value=SimpleNamespace(values={}, interrupts=())),

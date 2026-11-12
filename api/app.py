@@ -20,6 +20,7 @@ from config.settings import (
     DOCUMENT_WORKERS,
     PDF_DIRECTORY,
 )
+from core.chats import ChatRepository
 from core.graphs import StudyGraph
 from core.model_catalog import ModelCatalog
 from core.model_settings import ModelResolver, ModelSettingsRepository
@@ -49,6 +50,7 @@ async def lifespan(app: FastAPI):
     app.state.session_registry = SessionRegistry()
     app.state.document_repository = await DocumentRepository.open(APP_DATABASE_PATH)
     app.state.progress_repository = await ProgressRepository.open(APP_DATABASE_PATH)
+    app.state.chat_repository = await ChatRepository.open(APP_DATABASE_PATH)
     app.state.usage_repository = await UsageRepository.open(APP_DATABASE_PATH)
     app.state.model_catalog = ModelCatalog()
     app.state.model_settings = await ModelSettingsRepository.open(APP_DATABASE_PATH)
@@ -107,6 +109,7 @@ async def lifespan(app: FastAPI):
             await study_graph.checkpointer.conn.close()
         await app.state.model_settings.close()
         await app.state.usage_repository.close()
+        await app.state.chat_repository.close()
         await app.state.progress_repository.close()
         await app.state.document_repository.close()
 

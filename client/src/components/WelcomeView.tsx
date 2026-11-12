@@ -6,12 +6,15 @@ import styles from '../App.module.css';
 
 interface WelcomeViewProps {
   sessions: StudySession[];
+  sessionsStatus: 'loading' | 'ready' | 'error';
+  sessionsError: string | null;
   theme: Theme;
   backendUrl: string;
   authToken: string;
   onCreateSession: () => void;
   onOpenSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => Promise<void>;
+  onRetryLoad: () => void;
   onBackendUrlChange: (url: string) => void;
   onAuthTokenChange: (token: string) => void;
   onToggleTheme: () => void;
@@ -38,24 +41,24 @@ const formatDate = (timestamp: number): string => {
 
 export function WelcomeView({
   sessions,
+  sessionsStatus,
+  sessionsError,
   theme,
   backendUrl,
   authToken,
   onCreateSession,
   onOpenSession,
   onDeleteSession,
+  onRetryLoad,
   onBackendUrlChange,
   onAuthTokenChange,
   onToggleTheme,
   usesLocalToken,
 }: WelcomeViewProps): JSX.Element {
-  const orderedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [dueReviews, setDueReviews] = useState<DueReview[]>([]);
   const [modelsOpen, setModelsOpen] = useState(false);
-  const sessionTitles = new Map(sessions.map((session) => [session.id, session.title]));
-  const localDueReviews = dueReviews.filter((review) => sessionTitles.has(review.chat_id));
 
   useEffect(() => {
     let cancelled = false;
@@ -152,18 +155,18 @@ export function WelcomeView({
         </section>
 
         <section className={styles.recentPanel} aria-label="Sesiones recientes">
-          {localDueReviews.length > 0 && (
+          {dueReviews.length > 0 && (
             <div className={styles.dueSection}>
               <div className={styles.recentHeader}>
                 <h2>Para repasar hoy</h2>
-                <span className={styles.recentCount}>{localDueReviews.length}</span>
+                <span className={styles.recentCount}>{dueReviews.length}</span>
               </div>
               <ul className={styles.recentList}>
-                {localDueReviews.map((review) => (
+                {dueReviews.map((review) => (
                   <li className={styles.recentRow} key={`${review.chat_id}-${review.topic_number}`}>
                     <button className={styles.recentButton} onClick={() => onOpenSession(review.chat_id)} type="button">
                       <span className={styles.recentTitle}>{review.topic}</span>
-                      <span className={styles.recentMeta}>{sessionTitles.get(review.chat_id)}</span>
+                      <span className={styles.recentMeta}>{review.chat_title}</span>
                     </button>
                   </li>
                 ))}
@@ -178,21 +181,26 @@ export function WelcomeView({
 
           {deleteError && <p className={styles.uploadError} role="alert">{deleteError}</p>}
 
-          {orderedSessions.length === 0 ? (
+          {sessionsStatus === 'error' ? (
             <div className={styles.emptyState}>
-              <p>Aún no tienes sesiones.</p>
-              <span>Crea una para empezar a estudiar.</span>
+              <p>No se pudo conectar con el backend.</p>
+              {sessionsError && <span>{sessionsError}</span>}
+              <button className={styles.themeButton} onClick={onRetryLoad} type="button">Reintentar</button>
+            </div>
+          ) : sessions.length === 0 ? (
+            <div className={styles.emptyState}>
+              <p>{sessionsStatus === 'loading' ? 'Cargando sesiones…' : 'Aún no tienes sesiones.'}</p>
+              {sessionsStatus === 'ready' && <span>Crea una para empezar a estudiar.</span>}
             </div>
           ) : (
             <ul className={styles.recentList}>
-              {orderedSessions.map((session) => (
+              {sessions.map((session) => (
                 <li className={styles.recentRow} key={session.id}>
                   <button className={styles.recentButton} onClick={() => onOpenSession(session.id)} type="button">
                     <span className={styles.recentTitle}>{session.title}</span>
                     <span className={styles.recentMeta}>
                       <span className={styles.phaseBadge} data-phase={session.phase}>{phaseText[session.phase]}</span>
-                      <span>{session.messages.length} mensajes</span>
-                      <span>{session.documents.length} documentos</span>
+                      <span>{session.documentCount} documentos</span>
                       <span className={styles.recentDate}>{formatDate(session.updatedAt)}</span>
                     </span>
                   </button>

@@ -126,6 +126,11 @@ class ProgressEndpointTests(unittest.TestCase):
             delete_chat=AsyncMock(),
         )
         app.state.progress_repository = self.repository
+        app.state.chat_repository = SimpleNamespace(
+            list_messages=AsyncMock(return_value=[]),
+            titles=AsyncMock(return_value={"c": "Derivadas"}),
+            delete_chat=AsyncMock(),
+        )
         app.state.model_settings = SimpleNamespace(delete_chat=AsyncMock())
         app.state.study_graph = SimpleNamespace(
             aget_state=AsyncMock(return_value=SimpleNamespace(values={"study_plan": PLAN}, interrupts=())),
@@ -175,10 +180,15 @@ class ProgressEndpointTests(unittest.TestCase):
 
     def test_due_reviews_use_current_time_and_limit(self):
         response = self.client.get("/reviews/due", params={"limit": 7})
-        self.assertEqual(response.json(), {"reviews": [{"chat_id": "c"}]})
+        self.assertEqual(response.json(), {"reviews": [{"chat_id": "c", "chat_title": "Derivadas"}]})
         now, limit = self.repository.list_due.await_args.args
         self.assertEqual(limit, 7)
         self.assertLess(abs(datetime.now(timezone.utc) - now), timedelta(minutes=1))
+
+    def test_due_reviews_skip_chats_without_row(self):
+        self.repository.list_due.return_value = [{"chat_id": "c"}, {"chat_id": "viejo"}]
+        reviews = self.client.get("/reviews/due").json()["reviews"]
+        self.assertEqual([review["chat_id"] for review in reviews], ["c"])
 
     def test_due_reviews_default_and_invalid_limit(self):
         self.client.get("/reviews/due")
@@ -191,6 +201,7 @@ class ProgressEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.repository.delete_chat.assert_awaited_once_with("thread")
         self.client.app.state.model_settings.delete_chat.assert_awaited_once_with("thread")
+        self.client.app.state.chat_repository.delete_chat.assert_awaited_once_with("thread")
 
 
 if __name__ == "__main__":

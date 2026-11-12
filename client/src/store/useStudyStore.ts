@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { backendConnections, deleteChat, fetchChatSnapshot, setAuthToken as setBackendAuthToken } from '../services/backend';
+import {
+  backendConnections,
+  deleteChat,
+  fetchChats,
+  fetchChatSnapshot,
+  setAuthToken as setBackendAuthToken,
+} from '../services/backend';
 import type {
   AppView,
   BackendEvent,
@@ -12,9 +18,9 @@ import type {
   ConnectionStatus,
   GraphActivity,
   SidePanelTab,
+  ServerChatMessage,
   StudySession,
   Theme,
-  UploadedDocument,
   UsageTotals,
 } from '../types';
 
@@ -24,6 +30,9 @@ const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
 const MAX_PYTHON_CODE_CHARS = 20_000;
 const TURN_POLL_INTERVAL_MS = 3_000;
 const TURN_POLL_MAX_ATTEMPTS = 60;
+const CONTEXT_APPROVED_TEXT = 'Contexto aprobado. El equipo de tutores está listo.';
+const TITLE_MAX_CHARS = 42;
+const PROVISIONAL_PREFIX = 'local-';
 
 // Seguimiento por sesión de un turno que corre sin socket, por ejemplo tras recargar.
 const turnPolls = new Map<string, { timer: ReturnType<typeof setTimeout>; attempts: number }>();
@@ -40,13 +49,14 @@ const createSession = (): StudySession => ({
   id: createId(),
   title: 'Nueva sesión',
   phase: 'setup',
-  messages: [],
-  documents: [],
+  createdAt: Date.now(),
   updatedAt: Date.now(),
+  documentCount: 0,
 });
 
+// Mensaje que se muestra al instante; el id local lo distingue de los que guardó el servidor.
 const createMessage = (role: ChatMessage['role'], content: string, agent?: string): ChatMessage => ({
-  id: createId(),
+  id: `${PROVISIONAL_PREFIX}${createId()}`,
   role,
   content,
   agent,
@@ -73,52 +83,29 @@ const applyBoardPatch = (board: Board, patch: BoardPatch): Board => {
   };
 };
 
-// Agrega las respuestas guardadas en el servidor que no llegaron por el socket.
-const mergeSnapshot = (session: StudySession, snapshot: ChatSnapshot): StudySession => {
-  const messages = [...session.messages];
-  let changed = false;
-  const localAssistant = new Set(
-    messages.filter((message) => message.role === 'assistant').map((message) => message.content),
-  );
+const toChatMessage = (message: ServerChatMessage): ChatMessage => ({
+  id: message.id,
+  role: message.role,
+  content: message.content,
+  agent: message.agent ?? undefined,
+  createdAt: Date.parse(message.created_at),
+});
 
-  let previousUser: string | undefined;
-  for (const serverMessage of snapshot.messages) {
-    if (serverMessage.role === 'user') {
-      previousUser = serverMessage.content;
-      continue;
-    }
-    if (localAssistant.has(serverMessage.content)) continue;
-    // Se inserta tras el mensaje del usuario que lo originó.
-    let insertAt = messages.length;
-    if (previousUser !== undefined) {
-      for (let index = messages.length - 1; index >= 0; index -= 1) {
-        if (messages[index].role === 'user' && messages[index].content === previousUser) {
-          insertAt = index + 1;
-          break;
-        }
-      }
-    }
-    messages.splice(insertAt, 0, createMessage('assistant', serverMessage.content, 'Supervisor'));
-    localAssistant.add(serverMessage.content);
-    changed = true;
-  }
-
-  let phase = session.phase;
-  if (snapshot.phase === 'study' && phase !== 'study') {
-    messages.push(createMessage('system', 'Contexto aprobado. El equipo de tutores está listo.'));
-    phase = 'study';
-    changed = true;
-  } else if (snapshot.phase === 'clarification' && snapshot.pending_question && !localAssistant.has(snapshot.pending_question)) {
-    messages.push(createMessage('assistant', snapshot.pending_question, 'Preparación'));
-    phase = 'clarification';
-    changed = true;
-  }
-
-  return changed ? { ...session, phase, messages, updatedAt: Date.now() } : session;
+// La lista del servidor manda; solo se conserva el mensaje del usuario que el servidor aún no guardó.
+const messagesFromServer = (
+  server: ServerChatMessage[],
+  local: ChatMessage[],
+  keepPending: boolean,
+): ChatMessage[] => {
+  const messages = server.map(toChatMessage);
+  if (!keepPending) return messages;
+  const countUsers = (list: ChatMessage[]): number => list.filter((message) => message.role === 'user').length;
+  const pending = local.filter((message) => message.role === 'user' && message.id.startsWith(PROVISIONAL_PREFIX));
+  const missing = countUsers(local) - countUsers(messages);
+  return missing > 0 ? [...messages, ...pending.slice(-missing)] : messages;
 };
 
 interface PersistedState {
-  sessions: StudySession[];
   activeSessionId: string;
   theme: Theme;
   backendUrl: string;
@@ -130,7 +117,14 @@ interface PersistedState {
   pythonCode: Record<string, string | undefined>;
 }
 
+type SessionsStatus = 'loading' | 'ready' | 'error';
+
 interface StudyState extends PersistedState {
+  // La fuente de verdad es el servidor: ni la lista ni los mensajes se guardan en el navegador.
+  sessions: StudySession[];
+  sessionsStatus: SessionsStatus;
+  sessionsError: string | null;
+  messages: Record<string, ChatMessage[] | undefined>;
   view: AppView;
   draftSession: StudySession | null;
   connectionStates: Record<string, ConnectionStatus>;
@@ -151,6 +145,7 @@ interface StudyState extends PersistedState {
   openInPython: (sessionId: string, code: string) => void;
   setComposerDraft: (sessionId: string, content: string) => void;
   clearComposerDraft: () => void;
+  loadSessions: () => Promise<void>;
   createSession: () => void;
   deleteSession: (sessionId: string) => Promise<void>;
   selectSession: (sessionId: string) => void;
@@ -158,7 +153,6 @@ interface StudyState extends PersistedState {
   setTheme: (theme: Theme) => void;
   setBackendUrl: (backendUrl: string) => void;
   setAuthToken: (authToken: string) => void;
-  addDocument: (sessionId: string, document: UploadedDocument) => void;
   sendMessage: (content: string) => void;
   receiveEvent: (sessionId: string, event: BackendEvent) => void;
   resyncSession: (sessionId: string) => Promise<void>;
@@ -167,13 +161,16 @@ interface StudyState extends PersistedState {
   clearError: (sessionId: string) => void;
 }
 
-const normalizeSessions = (sessions: StudySession[]): StudySession[] =>
-  sessions.map((session) => ({ ...session, documents: session.documents ?? [] }));
+// Cada carga reemplaza a la anterior: una respuesta vieja no pisa a una más nueva.
+let sessionsRequest = 0;
 
 export const useStudyStore = create<StudyState>()(
   persist(
     (set, get) => ({
       sessions: [],
+      sessionsStatus: 'loading',
+      sessionsError: null,
+      messages: {},
       activeSessionId: '',
       view: 'home',
       draftSession: null,
@@ -209,10 +206,34 @@ export const useStudyStore = create<StudyState>()(
       })),
       setComposerDraft: (sessionId, content) => set({ composerDraft: { sessionId, content } }),
       clearComposerDraft: () => set({ composerDraft: null }),
+      loadSessions: async () => {
+        sessionsRequest += 1;
+        const request = sessionsRequest;
+        set({ sessionsStatus: 'loading' });
+        try {
+          const fetched = await fetchChats(get().backendUrl);
+          if (request !== sessionsRequest) return;
+          set((state) => {
+            // Una sesión con el primer turno en vuelo puede no estar todavía en el servidor.
+            const inFlight = state.sessions.filter((session) =>
+              state.connectionStates[session.id] === 'connecting' && !fetched.some((item) => item.id === session.id));
+            return {
+              sessions: [...inFlight, ...fetched],
+              sessionsStatus: 'ready',
+              sessionsError: null,
+            };
+          });
+        } catch (error: unknown) {
+          if (request !== sessionsRequest) return;
+          set({
+            sessionsStatus: 'error',
+            sessionsError: error instanceof Error ? error.message : 'No se pudo conectar con el backend.',
+          });
+        }
+      },
       createSession: () => {
         const session = createSession();
         set((state) => ({
-          sessions: state.sessions,
           draftSession: session,
           activeSessionId: session.id,
           view: 'session',
@@ -237,16 +258,19 @@ export const useStudyStore = create<StudyState>()(
           const graphActivities = { ...state.graphActivities };
           const boards = { ...state.boards };
           const usage = { ...state.usage };
+          const messages = { ...state.messages };
           const pythonCode = { ...state.pythonCode };
           delete connectionStates[sessionId];
           delete errors[sessionId];
           delete graphActivities[sessionId];
           delete boards[sessionId];
           delete usage[sessionId];
+          delete messages[sessionId];
           delete pythonCode[sessionId];
 
           return {
             sessions,
+            messages,
             activeSessionId,
             draftSession: isDiscardingDraft ? null : state.draftSession,
             view: activeSessionId === '' ? 'home' : state.view,
@@ -261,31 +285,23 @@ export const useStudyStore = create<StudyState>()(
       },
       selectSession: (sessionId) => {
         set({ activeSessionId: sessionId, view: 'session' });
-        // La pizarra no se guarda en el navegador: se pide al abrir la sesión.
+        // Los mensajes y la pizarra viven en el servidor: se piden al abrir la sesión.
         void get().resyncSession(sessionId);
       },
-      goHome: () => set((state) => ({
-        view: 'home',
-        activeSessionId: state.draftSession ? '' : state.activeSessionId,
-        draftSession: state.draftSession ? null : state.draftSession,
-      })),
+      goHome: () => {
+        set((state) => ({
+          view: 'home',
+          activeSessionId: state.draftSession ? '' : state.activeSessionId,
+          draftSession: state.draftSession ? null : state.draftSession,
+        }));
+        void get().loadSessions();
+      },
       setTheme: (theme) => set({ theme }),
       setBackendUrl: (backendUrl) => set({ backendUrl }),
       setAuthToken: (authToken) => {
         setBackendAuthToken(authToken);
         set({ authToken });
       },
-      addDocument: (sessionId, document) => set((state) => ({
-        sessions: state.sessions.map((session) => session.id === sessionId
-          ? {
-              ...session,
-              documents: session.documents.some((item) => item.id === document.id)
-                ? session.documents
-                : [...session.documents, document],
-              updatedAt: Date.now(),
-            }
-          : session),
-      })),
       sendMessage: (rawContent) => {
         const content = rawContent.trim();
         const state = get();
@@ -293,12 +309,11 @@ export const useStudyStore = create<StudyState>()(
         const session = existing ?? (state.draftSession?.id === state.activeSessionId ? state.draftSession : undefined);
         if (!session || !content || state.connectionStates[session.id] === 'connecting') return;
 
-        const firstUserMessage = !session.messages.some((message) => message.role === 'user');
-        const userMessage = createMessage('user', content);
+        const history = state.messages[session.id] ?? [];
+        const firstUserMessage = !history.some((message) => message.role === 'user');
         const updatedSession: StudySession = {
           ...session,
-          title: firstUserMessage ? content.slice(0, 42) : session.title,
-          messages: [...session.messages, userMessage],
+          title: firstUserMessage ? content.slice(0, TITLE_MAX_CHARS) : session.title,
           updatedAt: Date.now(),
         };
         const graphActivities = { ...state.graphActivities };
@@ -307,6 +322,7 @@ export const useStudyStore = create<StudyState>()(
           sessions: existing
             ? current.sessions.map((candidate) => candidate.id === session.id ? updatedSession : candidate)
             : [updatedSession, ...current.sessions],
+          messages: { ...current.messages, [session.id]: [...history, createMessage('user', content)] },
           draftSession: existing ? current.draftSession : null,
           connectionStates: { ...current.connectionStates, [session.id]: 'connecting' },
           errors: { ...current.errors, [session.id]: undefined },
@@ -383,56 +399,42 @@ export const useStudyStore = create<StudyState>()(
           const session = state.sessions.find((candidate) => candidate.id === sessionId);
           if (!session) return state;
 
-          let nextSession = session;
-          let status: ConnectionStatus = 'connected';
-          let error: string | undefined;
-          const graphActivities = state.graphActivities[sessionId]
-            ? {
-                ...state.graphActivities,
-                [sessionId]: setActivityStatus(state.graphActivities[sessionId] ?? [], 'complete'),
-              }
-            : state.graphActivities;
-
+          let nextSession: StudySession;
+          let message: ChatMessage;
           if (event.type === 'human_input_request') {
-            nextSession = {
-              ...session,
-              phase: 'clarification',
-              messages: [...session.messages, createMessage('assistant', event.content, 'Preparación')],
-              updatedAt: Date.now(),
-            };
+            nextSession = { ...session, phase: 'clarification', updatedAt: Date.now() };
+            message = createMessage('assistant', event.content, 'Preparación');
           } else if (event.type === 'context_processed') {
-            if (event.content.toLowerCase().includes('fallo')) {
-              status = 'error';
-              error = 'No se pudo preparar el contexto de estudio.';
-            } else {
-              const backendTitle = event.title_session?.trim();
-              nextSession = {
-                ...session,
-                title: backendTitle ? backendTitle : session.title,
-                phase: 'study',
-                messages: [...session.messages, createMessage('system', 'Contexto aprobado. El equipo de tutores está listo.')],
-                updatedAt: Date.now(),
-              };
-            }
-          } else {
+            const backendTitle = event.title_session?.trim();
             nextSession = {
               ...session,
+              title: backendTitle ? backendTitle : session.title,
               phase: 'study',
-              messages: [...session.messages, createMessage('assistant', event.content, 'Supervisor')],
               updatedAt: Date.now(),
             };
+            message = createMessage('system', CONTEXT_APPROVED_TEXT);
+          } else {
+            nextSession = { ...session, phase: 'study', updatedAt: Date.now() };
+            message = createMessage('assistant', event.content, 'Supervisor');
           }
 
           return {
             sessions: state.sessions.map((candidate) => candidate.id === sessionId ? nextSession : candidate),
-            connectionStates: { ...state.connectionStates, [sessionId]: status },
-            errors: { ...state.errors, [sessionId]: error },
-            graphActivities,
+            messages: { ...state.messages, [sessionId]: [...(state.messages[sessionId] ?? []), message] },
+            connectionStates: { ...state.connectionStates, [sessionId]: 'connected' },
+            errors: { ...state.errors, [sessionId]: undefined },
+            graphActivities: state.graphActivities[sessionId]
+              ? {
+                  ...state.graphActivities,
+                  [sessionId]: setActivityStatus(state.graphActivities[sessionId] ?? [], 'complete'),
+                }
+              : state.graphActivities,
           };
         });
 
-        // Recupera los parches que se perdieron durante el turno.
-        if (event.type === 'agent_response') void get().resyncSession(sessionId);
+        // La versión del servidor reemplaza lo mostrado al instante y trae los parches que se perdieron.
+        void get().resyncSession(sessionId);
+        void get().loadSessions();
       },
       resyncSession: async (sessionId) => {
         let snapshot: ChatSnapshot;
@@ -452,10 +454,16 @@ export const useStudyStore = create<StudyState>()(
             && snapshot.board.revision < local.revision;
           // Los tokens solo crecen: un total menor es una lectura anterior al último evento.
           const usageIsBehind = (snapshot.usage?.total_tokens ?? 0) < (state.usage[sessionId]?.total_tokens ?? 0);
+          const status = state.connectionStates[sessionId];
+          const keepPending = status === 'connecting' || status === 'error';
           return {
-            sessions: state.sessions.map((session) => session.id === sessionId
-              ? mergeSnapshot(session, snapshot)
+            sessions: state.sessions.map((session) => session.id === sessionId && session.phase !== snapshot.phase
+              ? { ...session, phase: snapshot.phase }
               : session),
+            messages: {
+              ...state.messages,
+              [sessionId]: messagesFromServer(snapshot.messages, state.messages[sessionId] ?? [], keepPending),
+            },
             boards: snapshot.board && !isBehind
               ? { ...state.boards, [sessionId]: snapshot.board }
               : state.boards,
@@ -507,7 +515,6 @@ export const useStudyStore = create<StudyState>()(
       name: 'estudio-multiagente',
       storage: createJSONStorage(() => localStorage),
       partialize: (state): PersistedState => ({
-        sessions: state.sessions,
         activeSessionId: state.activeSessionId,
         theme: state.theme,
         backendUrl: state.backendUrl,
@@ -518,18 +525,18 @@ export const useStudyStore = create<StudyState>()(
         sidePanelTab: state.sidePanelTab,
         pythonCode: state.pythonCode,
       }),
+      // Las sesiones ahora viven en el servidor: lo que se guardó antes en el navegador se descarta.
+      version: 1,
+      migrate: (persisted) => {
+        const { sessions: _sessions, ...preferences } = persisted as Partial<PersistedState> & { sessions?: unknown };
+        return preferences;
+      },
       merge: (persisted, current) => {
         const saved = persisted as Partial<PersistedState>;
-        const sessions = normalizeSessions(saved.sessions ?? []);
-        const activeSessionId = sessions.some((session) => session.id === saved.activeSessionId)
-          ? (saved.activeSessionId ?? '')
-          : (sessions[0]?.id ?? '');
         setBackendAuthToken(saved.authToken ?? '');
         return {
           ...current,
           ...saved,
-          sessions,
-          activeSessionId,
           draftSession: null,
           view: 'home',
           connectionStates: {},
@@ -537,6 +544,7 @@ export const useStudyStore = create<StudyState>()(
           graphActivities: {},
           boards: {},
           usage: {},
+          messages: {},
           deepModes: {},
         };
       },

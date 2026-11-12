@@ -22,6 +22,7 @@ from api.security import (
 )
 from config.settings import WS_MAX_MESSAGE_CHARS
 from core.agents.catalog import ARCHETYPES
+from core.chats import ChatRepository
 from core.streaming import execute_astream_graph, token_text
 from core.study.repository import ProgressRepository
 from core.usage import UsageTracker, session_usage
@@ -34,6 +35,10 @@ WS_IDLE_TIMEOUT_SECONDS = 300
 TURN_WAIT_TIMEOUT_SECONDS = 120
 HEARTBEAT_INTERVAL_SECONDS = 15
 WS_CLOSE_SUPERSEDED = 4000
+# Etiquetas de la transcripción y aviso que cierra la preparación.
+SUPERVISOR_AGENT = "Supervisor"
+PREPARATION_AGENT = "Preparación"
+CONTEXT_APPROVED_TEXT = "Contexto aprobado. El equipo de tutores está listo."
 USAGE_EVENT_FIELDS = ("context_used", "context_limit", "total_tokens", "cost_usd", "cost_estimated", "cost_unknown")
 
 
@@ -237,6 +242,14 @@ async def _save_progress(repository: ProgressRepository, thread_id: str, result:
         logger.exception("No se pudo guardar el progreso thread_id=%s", thread_id)
 
 
+async def _save_message(repository: ChatRepository, thread_id: str, role: str, content: str, **fields) -> None:
+    """Guarda un mensaje de la transcripción; un fallo no debe romper el turno."""
+    try:
+        await repository.add_message(thread_id, role, content, datetime.now(timezone.utc), **fields)
+    except Exception:
+        logger.exception("No se pudo guardar la transcripción thread_id=%s", thread_id)
+
+
 class _TurnUsage:
     """Guarda el uso de un turno a medida que ocurre y se lo informa al cliente."""
 
@@ -305,6 +318,8 @@ async def _process_message(
     }
     graph = state.study_graph
 
+    # Se guarda antes del grafo: si el cliente recarga a mitad del turno, su mensaje ya está.
+    await _save_message(state.chat_repository, thread_id, "user", message)
     snapshot = await graph.aget_state(config)
     had_plan = snapshot.values.get("study_plan") is not None
     # Usa los documentos listos al empezar el turno.
@@ -328,6 +343,10 @@ async def _process_message(
     logger.info("turn end thread_id=%s", thread_id)
 
     if interrupt_info:
+        await _save_message(
+            state.chat_repository, thread_id, "assistant", interrupt_info[0].value,
+            agent=PREPARATION_AGENT, phase="clarification",
+        )
         await sender.send_json({
             "type": "human_input_request",
             "content": interrupt_info[0].value,
@@ -336,6 +355,10 @@ async def _process_message(
         # Se guarda antes de avisar, porque el cliente refresca el progreso con la respuesta.
         await _save_progress(state.progress_repository, thread_id, result)
         answer = result["messages"][-1].content
+        await _save_message(
+            state.chat_repository, thread_id, "assistant", token_text(answer),
+            agent=SUPERVISOR_AGENT, phase="study",
+        )
         await sender.send_json({
             "type": "agent_response",
             "content": answer,
@@ -349,10 +372,15 @@ async def _process_message(
             retryable=True,
         )
     else:
+        title = result["classified_context"].title_session
+        await _save_message(
+            state.chat_repository, thread_id, "system", CONTEXT_APPROVED_TEXT,
+            phase="study", title=(title or "").strip() or None,
+        )
         await sender.send_json({
             "type": "context_processed",
             "content": "Contexto procesado",
-            "title_session": result["classified_context"].title_session,
+            "title_session": title,
         })
 
 

@@ -104,7 +104,7 @@ La sesión tiene un panel a la derecha con tres pestañas. Se cierra con su bot�
 - **Progreso:** muestra el temario con el estado de cada tema, la próxima fecha de repaso y la última evidencia. Se refresca al abrir la pestaña y con cada turno.
 - **Python:** editor y ejecución en el navegador.
 
-La pantalla de inicio agrega «Para repasar hoy» con los repasos vencidos de `GET /reviews/due`, y oculta los que no tienen sesión local.
+La pantalla de inicio agrega «Para repasar hoy» con los repasos vencidos de `GET /reviews/due`, con el título de la sesión que devuelve el servidor.
 
 ## Modelos
 
@@ -132,14 +132,23 @@ El código corre en un Web Worker (`src/services/pythonWorker.ts`), administrado
 
 No hay Content Security Policy en `index.html`, `nginx.conf` ni Electron. Si se agrega una, debe permitir `cdn.jsdelivr.net`, `wasm-unsafe-eval` y `worker-src`.
 
+## Sesiones y mensajes
+
+La lista de sesiones, los mensajes y la cantidad de documentos vienen del servidor (`GET /chats` y `GET /chats/{id}/messages`); el `localStorage` guarda solo las preferencias: sesión activa, tema, dirección y token del backend, estado de los paneles y el código de Python. Por eso una sesión se ve igual desde otro navegador o dispositivo. Las sesiones que una versión anterior guardó en el navegador no se migran: se descartan al actualizar.
+
+- La lista se carga al iniciar, al volver al inicio y después de cada evento que cierra un turno. Sin backend, la pantalla de inicio muestra «No se pudo conectar con el backend» con un botón «Reintentar»; no hay caché sin conexión.
+- Una sesión nueva existe solo en el cliente hasta su primer mensaje; el backend la crea en ese primer turno.
+- Al enviar se muestra el mensaje del usuario al instante, y con `human_input_request`, `context_processed` y `agent_response` se muestra el contenido recibido. Enseguida se pide `GET /chats/{id}/messages`, y la lista del servidor reemplaza a la local sin mezclarla.
+- El panel «Material» pide los documentos con `GET /chats/{id}/pdfs` al abrirse y después de subir uno; el contador sale de esa lista.
+
 ## Protocolo e integración
 
-El cliente envía `{ "content": "...", "deep": false }` por la ruta `/ws/{thread_id}` y reconoce `thinking`, `human_input_request`, `context_processed`, `agent_response`, `board_patch`, `status` y `error`. Los fragmentos `thinking` se acumulan y se muestran en vivo en la conversación; las respuestas también se guardan localmente en el renderer. En el backend, el estado de cada sesión se conserva mediante checkpoints persistidos en SQLite, por lo que la memoria no depende de que la conexión WebSocket o el proceso Python permanezcan activos.
+El cliente envía `{ "content": "...", "deep": false }` por la ruta `/ws/{thread_id}` y reconoce `thinking`, `human_input_request`, `context_processed`, `agent_response`, `board_patch`, `status` y `error`. Los fragmentos `thinking` se acumulan y se muestran en vivo en la conversación; las respuestas se muestran al instante y luego se reemplazan por la transcripción del servidor. En el backend, el estado de cada sesión se conserva mediante checkpoints persistidos en SQLite, por lo que la memoria no depende de que la conexión WebSocket o el proceso Python permanezcan activos.
 
-Los fragmentos `thinking` se acumulan durante 100 ms antes de llegar al store, porque renderizar la sesión con cada uno bloquearía la interfaz. Se agrupan por `node` y `step` cuando esos campos están disponibles, y se muestran como actividad en curso o completada. La interfaz etiqueta el grafo de contexto o el grafo de estudio según la fase de la sesión. También se aceptan eventos con metadatos anidados o serializados delante del texto en `content`.
+Los fragmentos `thinking` se acumulan durante 100 ms antes de llegar al store, porque renderizar la sesión con cada uno bloquearía la interfaz. Se agrupan por `node` y `step` cuando esos campos están disponibles, y se muestran como actividad en curso o completada. La interfaz etiqueta el grafo de contexto o el grafo de estudio según la fase de la sesión. El servidor manda `node` y `step` como campos del evento.
 
 `deep` es opcional y booleano: `true` pide el modo profundo para ese turno, y el backend rechaza otro tipo con `invalid_message`. El cliente lo envía según el botón «Profundo» de la sesión, que vive en el store sin persistir, y solo en la fase de estudio.
 
-La respuesta `agent_response` contiene solo `content`, sin el nombre del subagente. La interfaz etiqueta esas respuestas como «Supervisor» y las preguntas de setup como «Preparación»; para distinguir tutores concretos, el backend debe incluir metadatos de agente en sus eventos.
+La respuesta `agent_response` contiene solo `content`, sin el nombre del subagente. El servidor guarda esas respuestas con el agente «Supervisor» y las preguntas de setup con «Preparación», y la conversación muestra la etiqueta `agent` de cada mensaje; el mensaje del usuario se etiqueta «Tú».
 
 El evento `board_patch` lleva `content` vacío, `revision`, `op` (`upsert`, `remove` o `clear`) y `block` o `block_id` según la operación. Un parche solo se aplica si su revisión es la siguiente a la local; si no, el cliente pide `GET /chats/{id}/messages`, que trae la pizarra completa. También se resincroniza al abrir una sesión, al recibir `agent_response` y ante un error, lo que revierte los parches de un turno fallido. Si esa respuesta trae `turn_active` y la sesión no está esperando un turno propio, el cliente repite la consulta cada 3 s hasta que termine, con un máximo de 60 intentos.

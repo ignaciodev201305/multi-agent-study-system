@@ -84,6 +84,18 @@ class _FakeProgressRepository:
         self.saved.append((chat_id, updates, now))
 
 
+class _FakeChatRepository:
+    def __init__(self):
+        self.saved = []
+        self.broken = False
+
+    async def add_message(self, chat_id, role, content, now, agent=None, phase=None, title=None):
+        if self.broken:
+            raise RuntimeError("base no disponible")
+        self.saved.append({"chat_id": chat_id, "role": role, "content": content,
+                           "agent": agent, "phase": phase, "title": title})
+
+
 def _make_client(test, *, delay=0.0, context_ready=True):
     app = FastAPI()
     app.include_router(ws.router)
@@ -91,6 +103,7 @@ def _make_client(test, *, delay=0.0, context_ready=True):
     app.state.study_graph = _FakeStudyGraph(delay, context_ready)
     app.state.document_repository = _FakeRepository()
     app.state.progress_repository = _FakeProgressRepository()
+    app.state.chat_repository = _FakeChatRepository()
     app.state.model_resolver = _FakeResolver()
     app.state.usage_repository = None
     token_patch = patch("config.settings.APP_TOKEN", TOKEN)
@@ -249,6 +262,35 @@ class WebSocketProgressTests(unittest.TestCase):
                 events = _receive_until(websocket, "agent_response")
         self.assertEqual(events[-1]["content"], "respuesta:a")
 
+    def test_study_turn_saves_user_and_supervisor_messages(self):
+        client, _ = _make_client(self)
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "a"})
+            _receive_until(websocket, "agent_response")
+        self.assertEqual(client.app.state.chat_repository.saved, [
+            {"chat_id": "thread", "role": "user", "content": "a", "agent": None, "phase": None, "title": None},
+            {"chat_id": "thread", "role": "assistant", "content": "respuesta:a",
+             "agent": "Supervisor", "phase": "study", "title": None},
+        ])
+
+    def test_interrupt_saves_question_in_clarification_phase(self):
+        client, _ = _make_client(self, context_ready=False)
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "quiero estudiar"})
+            _receive_until(websocket, "human_input_request")
+        saved = client.app.state.chat_repository.saved
+        self.assertEqual([entry["role"] for entry in saved], ["user", "assistant"])
+        self.assertEqual(saved[1]["content"], "¿Qué nivel tienes?")
+        self.assertEqual((saved[1]["agent"], saved[1]["phase"]), ("Preparación", "clarification"))
+
+    def test_transcript_failure_keeps_response(self):
+        client, _ = _make_client(self)
+        client.app.state.chat_repository.broken = True
+        with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
+            websocket.send_json({"content": "a"})
+            events = _receive_until(websocket, "agent_response")
+        self.assertEqual(events[-1]["content"], "respuesta:a")
+
     def test_context_turn_does_not_save_progress(self):
         client, _ = _make_client(self, context_ready=False)
         with client.websocket_connect("/ws/thread", headers=dict(ORIGIN), subprotocols=PROTOCOLS) as websocket:
@@ -275,6 +317,7 @@ class ClosedSocketProgressTests(unittest.IsolatedAsyncioTestCase):
         repository = _FakeProgressRepository()
         socket = _ClosedSocket(SimpleNamespace(
             study_graph=graph,
+            chat_repository=_FakeChatRepository(),
             document_repository=_FakeRepository(),
             progress_repository=repository,
             model_resolver=_FakeResolver(),
