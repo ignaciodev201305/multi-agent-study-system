@@ -1,11 +1,15 @@
-"""Pruebas del token local en HTTP y de la configuración CORS."""
+"""Pruebas del token local en HTTP, de la configuración CORS y del cliente web servido."""
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
+from api.app import app as api_app, lifespan
 from api.cors import configure_cors
 from api.security import TokenAuthMiddleware, TurnRateLimiter, reset_auth_failures
 from config.settings import AUTH_MAX_FAILURES_PER_MINUTE
@@ -86,6 +90,62 @@ class TokenAuthTests(unittest.TestCase):
             response = self.client.get("/chats/a/pdfs", headers={"Authorization": "Bearer secreto-enviado"})
         self.assertNotIn("secreto-enviado", response.text)
         self.assertNotIn("secreto-enviado", " ".join(logs.output))
+
+
+class WebClientTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        (root / "assets").mkdir()
+        (root / "index.html").write_text("<p>inicio</p>", encoding="utf-8")
+        (root / "assets" / "app.js").write_text("// app", encoding="utf-8")
+        (root / "secreto.txt").write_text("no", encoding="utf-8")
+
+        app = _make_app()
+        app.mount("/", StaticFiles(directory=root, html=True), name="web")
+        for name, value in (("APP_TOKEN", TOKEN), ("SERVE_WEB_CLIENT", True)):
+            setting_patch = patch(f"config.settings.{name}", value)
+            setting_patch.start()
+            self.addCleanup(setting_patch.stop)
+        reset_auth_failures()
+        self.addCleanup(reset_auth_failures)
+        self.client = TestClient(app)
+
+    def test_shell_and_assets_load_without_token(self):
+        self.assertIn("inicio", self.client.get("/").text)
+        self.assertEqual(self.client.get("/assets/app.js").status_code, 200)
+
+    def test_api_still_needs_token(self):
+        self.assertEqual(self.client.get("/chats/a/pdfs").status_code, 401)
+
+    def test_other_files_and_methods_need_token(self):
+        self.assertEqual(self.client.get("/secreto.txt").status_code, 401)
+        self.assertEqual(self.client.post("/").status_code, 401)
+
+    def test_shell_needs_token_when_not_serving_web_client(self):
+        with patch("config.settings.SERVE_WEB_CLIENT", False):
+            self.assertEqual(self.client.get("/").status_code, 401)
+
+
+class WebClientStartupTests(unittest.IsolatedAsyncioTestCase):
+    async def _start(self):
+        async with lifespan(api_app):
+            pass
+
+    async def test_short_token_stops_startup(self):
+        with patch("config.settings.SERVE_WEB_CLIENT", True), patch("config.settings.APP_TOKEN", TOKEN):
+            with self.assertRaisesRegex(RuntimeError, "APP_TOKEN"):
+                await self._start()
+
+    async def test_missing_build_stops_startup(self):
+        with (
+            patch("config.settings.SERVE_WEB_CLIENT", True),
+            patch("config.settings.APP_TOKEN", "t" * 32),
+            patch("config.settings.WEB_CLIENT_DIRECTORY", Path("no-existe")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "npm run build"):
+                await self._start()
 
 
 class TurnRateLimiterTests(unittest.TestCase):

@@ -26,7 +26,14 @@ import type {
 
 export const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
-const DEFAULT_BACKEND_URL = 'ws://127.0.0.1:8000';
+// Servida por el backend desde otro host (un túnel HTTPS), la API está en ese mismo origen.
+const defaultBackendUrl = (): string => {
+  const { protocol, hostname, origin } = window.location;
+  const isWebPage = protocol === 'http:' || protocol === 'https:';
+  return isWebPage && !LOCAL_HOSTS.has(hostname) ? origin : 'ws://127.0.0.1:8000';
+};
+
+const DEFAULT_BACKEND_URL = defaultBackendUrl();
 // En pantallas angostas los paneles son capas completas: empiezan cerrados.
 const PANELS_OPEN_BY_DEFAULT = !window.matchMedia('(max-width: 760px)').matches;
 export const DEFAULT_SIDE_PANEL_WIDTH = 348;
@@ -538,9 +545,12 @@ export const useStudyStore = create<StudyState>()(
       merge: (persisted, current) => {
         const saved = persisted as Partial<PersistedState>;
         setBackendAuthToken(saved.authToken ?? '');
+        // Las versiones con proxy guardaban el origen con /api, ruta que el backend no tiene.
+        const backendUrl = saved.backendUrl === `${window.location.origin}/api` ? DEFAULT_BACKEND_URL : saved.backendUrl;
         return {
           ...current,
           ...saved,
+          backendUrl: backendUrl ?? current.backendUrl,
           draftSession: null,
           view: 'home',
           connectionStates: {},

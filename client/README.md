@@ -42,7 +42,7 @@ O úsala en el navegador, sin Electron, y abre `http://127.0.0.1:5173`:
 npx vite --host 127.0.0.1
 ```
 
-La aplicación usa por defecto `ws://127.0.0.1:8000/ws/{thread_id}`. La dirección base se puede cambiar en la pantalla de inicio, en el campo «Backend WebSocket». El servidor debe estar disponible antes de enviar el primer mensaje.
+La aplicación usa por defecto `ws://127.0.0.1:8000/ws/{thread_id}`. La dirección base se puede cambiar en la pantalla de inicio, en el campo «Backend WebSocket». Si la página la sirve el propio backend desde otro host (ver [Acceso desde el celular](../README.md#acceso-desde-el-celular)), usa ese mismo origen y descarta una dirección guardada con `/api` por versiones anteriores. El servidor debe estar disponible antes de enviar el primer mensaje.
 
 ## Token
 
@@ -122,10 +122,10 @@ La ventana de Electron mantiene su ancho mínimo de 760 px.
 
 ## Instalar en el celular
 
-Servido por HTTPS desde un origen propio (el repositorio no incluye ese despliegue), el cliente es una PWA: en Chrome para Android, menú → «Agregar a la pantalla principal» o «Instalar app» deja un ícono que abre la aplicación sin la barra del navegador.
+Servido por HTTPS (ver [Acceso desde el celular](../README.md#acceso-desde-el-celular)), el cliente es una PWA: en Chrome para Android, menú → «Agregar a la pantalla principal» o «Instalar app»; en Safari para iOS, Compartir → «Agregar a inicio». Queda un ícono que abre la aplicación sin la barra del navegador. Con un túnel de dirección cambiante, el ícono deja de servir cuando la dirección cambia.
 
 - `public/manifest.webmanifest` declara el nombre, el modo `standalone` y los íconos de `public/icons/`, generados desde `build/icon.png` (192 y 512 px, y uno `maskable` con el logo al 80 % sobre `#101113`).
-- `public/sw.js` guarda solo el shell: `index.html`, `/assets/`, los íconos y el manifest. No intercepta `/api/`, el WebSocket, peticiones que no sean `GET` ni otros orígenes (Pyodide), así que ni el token ni las respuestas del backend quedan en caché.
+- `public/sw.js` guarda solo el shell: `index.html`, `/assets/`, los íconos y el manifest. No intercepta la API, el WebSocket, peticiones que no sean `GET` ni otros orígenes (Pyodide), así que ni el token ni las respuestas del backend quedan en caché.
 - Se registra solo en la versión compilada y bajo `https:`; en Electron y con Vite no hay service worker.
 - Con el shell guardado, la app abre aunque la PC esté apagada y la pantalla de inicio explica por qué no cargan las sesiones.
 - Al cambiar la lista de rutas guardadas, sube la versión de `CACHE` en `sw.js` para descartar la caché anterior.

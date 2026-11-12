@@ -17,6 +17,9 @@ THREAD_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,100}")
 WS_APP_SUBPROTOCOL = "study.v1"
 WS_TOKEN_SUBPROTOCOL_PREFIX = "token."
 
+# Archivos del cliente web compilado: se sirven sin token porque no llevan datos.
+WEB_CLIENT_PATHS = re.compile(r"/((assets|icons)/.*|index\.html|sw\.js|manifest\.webmanifest|logo\.png)?")
+
 
 def is_valid_thread_id(thread_id: str) -> bool:
     """Indica si el id cumple el formato permitido."""
@@ -57,6 +60,11 @@ class TokenAuthMiddleware:
     async def __call__(self, scope, receive, send):
         # Los preflight CORS no llevan cabeceras de autenticación.
         if scope["type"] != "http" or scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        is_read = scope.get("method") in ("GET", "HEAD")
+        if settings.SERVE_WEB_CLIENT and is_read and WEB_CLIENT_PATHS.fullmatch(scope["path"]):
             await self.app(scope, receive, send)
             return
 

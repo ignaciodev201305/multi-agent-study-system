@@ -88,6 +88,12 @@ APP_TOKEN = os.environ.get("APP_TOKEN", "").strip()
 # Intentos fallidos de autenticación por minuto antes de responder 429.
 AUTH_MAX_FAILURES_PER_MINUTE = max(1, int(os.environ.get("AUTH_MAX_FAILURES_PER_MINUTE", "10")))
 
+# Sirve el cliente web compilado desde este backend, para abrirlo por un túnel HTTPS.
+SERVE_WEB_CLIENT = os.environ.get("SERVE_WEB_CLIENT", "") == "1"
+WEB_CLIENT_DIRECTORY = BASE_DIR / "client" / "dist"
+# Largo mínimo del token cuando la web queda accesible fuera de esta máquina.
+WEB_CLIENT_TOKEN_MIN_CHARS = 32
+
 # Límites del WebSocket para acotar el costo.
 WS_MAX_MESSAGE_CHARS = max(1, int(os.environ.get("WS_MAX_MESSAGE_CHARS", "8000")))
 WS_MAX_TURNS_PER_MINUTE = max(1, int(os.environ.get("WS_MAX_TURNS_PER_MINUTE", "20")))

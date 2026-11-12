@@ -1,6 +1,6 @@
 // Service worker: guarda solo el shell estático para que la app abra sin conexión con la PC.
 const CACHE = 'estudio-shell-v1';
-// Únicas rutas que se guardan; la API (/api/), el WebSocket y otros orígenes nunca pasan por aquí.
+// Únicas rutas que se guardan; la API, el WebSocket y otros orígenes nunca pasan por aquí.
 const STATIC_PATHS = /^\/(assets|icons)\/|^\/(logo\.png|manifest\.webmanifest)$/;
 
 self.addEventListener('install', () => self.skipWaiting());

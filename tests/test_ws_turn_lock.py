@@ -206,6 +206,26 @@ class WebSocketTurnLockTests(unittest.TestCase):
             with client.websocket_connect("/ws/thread", headers={"origin": "https://evil.example"}, subprotocols=PROTOCOLS) as websocket:
                 websocket.receive_json()
 
+    def test_same_origin_is_accepted_only_when_serving_web_client(self):
+        client, _ = _make_client(self)
+        headers = {"origin": "https://estudio.example", "host": "estudio.example"}
+        with self.assertRaises(WebSocketDisconnect):
+            with client.websocket_connect("/ws/thread", headers=dict(headers), subprotocols=PROTOCOLS) as websocket:
+                websocket.receive_json()
+        with patch("config.settings.SERVE_WEB_CLIENT", True):
+            with client.websocket_connect("/ws/thread", headers=dict(headers), subprotocols=PROTOCOLS) as websocket:
+                websocket.send_json({"content": "a"})
+                events = _receive_until(websocket, "agent_response")
+        self.assertEqual(events[-1]["type"], "agent_response")
+
+    def test_other_origin_is_rejected_when_serving_web_client(self):
+        client, _ = _make_client(self)
+        headers = {"origin": "https://evil.example", "host": "estudio.example"}
+        with patch("config.settings.SERVE_WEB_CLIENT", True):
+            with self.assertRaises(WebSocketDisconnect):
+                with client.websocket_connect("/ws/thread", headers=headers, subprotocols=PROTOCOLS) as websocket:
+                    websocket.receive_json()
+
 
 class WebSocketModelTests(unittest.TestCase):
     def test_turn_receives_resolved_models(self):

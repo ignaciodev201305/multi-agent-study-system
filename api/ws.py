@@ -6,6 +6,7 @@ import logging
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException, status
@@ -21,6 +22,7 @@ from api.security import (
     too_many_auth_failures,
     websocket_token,
 )
+from config import settings
 from config.settings import WS_MAX_MESSAGE_CHARS
 from core.agents.catalog import ARCHETYPES, AREAS
 from core.chats import ChatRepository
@@ -421,10 +423,18 @@ def origin_allowed(origin: str | None) -> bool:
     )
 
 
+def same_origin(origin: str | None, host: str | None) -> bool:
+    """Indica si el Origin es el mismo host que atiende la petición."""
+    return origin is not None and host is not None and urlsplit(origin).netloc == host
+
+
 @router.websocket("/ws/{thread_id}")
 async def websocket_endpoint(websocket: WebSocket, thread_id: str):
     """Valida la conexión, reemplaza la anterior del mismo thread y atiende sus turnos."""
-    if not origin_allowed(websocket.headers.get("origin")):
+    origin = websocket.headers.get("origin")
+    # Con la web servida por este backend, su origen es el propio host (p. ej. el del túnel).
+    served_here = settings.SERVE_WEB_CLIENT and same_origin(origin, websocket.headers.get("host"))
+    if not (origin_allowed(origin) or served_here):
         await websocket.close(
             code=status.WS_1008_POLICY_VIOLATION,
             reason="origin_not_allowed",

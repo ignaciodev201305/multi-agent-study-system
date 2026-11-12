@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from api.cors import configure_cors
 from api.routes import router as chats_router
@@ -47,6 +48,15 @@ async def lifespan(app: FastAPI):
             "Falta APP_TOKEN en el entorno (.env). Genera uno con "
             "'python -c \"import secrets; print(secrets.token_hex(32))\"' y configúralo también en el cliente."
         )
+    if settings.SERVE_WEB_CLIENT:
+        if len(settings.APP_TOKEN) < settings.WEB_CLIENT_TOKEN_MIN_CHARS:
+            raise RuntimeError(
+                f"Con SERVE_WEB_CLIENT=1, APP_TOKEN debe tener al menos {settings.WEB_CLIENT_TOKEN_MIN_CHARS} caracteres."
+            )
+        if not (settings.WEB_CLIENT_DIRECTORY / "index.html").is_file():
+            raise RuntimeError(
+                "Con SERVE_WEB_CLIENT=1 falta el cliente compilado: ejecuta 'npm run build' en client/."
+            )
     app.state.session_registry = SessionRegistry()
     app.state.document_repository = await DocumentRepository.open(APP_DATABASE_PATH)
     app.state.progress_repository = await ProgressRepository.open(APP_DATABASE_PATH)
@@ -125,3 +135,7 @@ configure_cors(app)
 
 app.include_router(ws_router)
 app.include_router(chats_router)
+
+if settings.SERVE_WEB_CLIENT:
+    # Va después de los routers: la API tiene prioridad sobre los archivos estáticos.
+    app.mount("/", StaticFiles(directory=settings.WEB_CLIENT_DIRECTORY, html=True, check_dir=False), name="web")

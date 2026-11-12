@@ -176,7 +176,7 @@ cp .env.example .env
 | `TAVILY_API_KEY` | Clave de Tavily para la búsqueda web del clasificador de contexto y del arquetipo investigador. |
 | `APP_TOKEN` | Token local obligatorio. La API lo exige en HTTP (`Authorization: Bearer`) y en el WebSocket (subprotocolo `token.<APP_TOKEN>`); sin él no arranca. Genéralo con `python -c "import secrets; print(secrets.token_hex(32))"` La app de Electron lo lee de este `.env` cuando el backend es local; en el navegador o con un servidor remoto, pégalo en el campo «Token del servidor» de la pantalla de inicio. |
 
-Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `CHAT_MESSAGES_MAX_ENTRIES` (500), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `TOOL_WORKER_TIMEOUT_SECONDS` (10), `SUPERVISOR_RECURSION_LIMIT` (40), `DEEP_SUPERVISOR_RECURSION_LIMIT` (150), `DEEP_SUPERVISOR_MAX_MODEL_CALLS` (20), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8), `BOARD_MAX_PLOT_FUNCTIONS` (4) y `AUTH_MAX_FAILURES_PER_MINUTE` (10). Tras `AUTH_MAX_FAILURES_PER_MINUTE` intentos con un token inválido en un minuto, los siguientes reciben `429`; un token válido siempre pasa.
+Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `CHAT_MESSAGES_MAX_ENTRIES` (500), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `TOOL_WORKER_TIMEOUT_SECONDS` (10), `SUPERVISOR_RECURSION_LIMIT` (40), `DEEP_SUPERVISOR_RECURSION_LIMIT` (150), `DEEP_SUPERVISOR_MAX_MODEL_CALLS` (20), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8), `BOARD_MAX_PLOT_FUNCTIONS` (4) y `AUTH_MAX_FAILURES_PER_MINUTE` (10). Tras `AUTH_MAX_FAILURES_PER_MINUTE` intentos con un token inválido en un minuto, los siguientes reciben `429`; un token válido siempre pasa. `SERVE_WEB_CLIENT=1` sirve el cliente web desde el backend: ver [Acceso desde el celular](#acceso-desde-el-celular).
 
 Modelos por rol (`context_classifier`, `factory`, `supervisor`, `subagent_light`, `subagent_heavy`, `summarizer`): se cambian sin tocar código con `MODEL_<ROL>`, `TEMPERATURE_<ROL>` y `REASONING_<ROL>` (p. ej. `MODEL_SUPERVISOR=openai/gpt-5.5`). Lo elegido en la interfaz tiene prioridad sobre estas variables. Los embeddings con `MODEL_EMBEDDINGS`.
 
@@ -235,6 +235,26 @@ El cliente arranca aparte, con Electron o solo en el navegador: ver [client/READ
 **Migración:** las sesiones anteriores no se migran, tampoco las que el cliente guardaba en el `localStorage` del navegador: la nueva versión las descarta y empieza de cero. Si vienes de una versión con `context_study.db`, `session_study.db` o `document_processor.db`, limpia `data/` (con Docker, `docker compose down -v`) antes de arrancar.
 
 **Progreso anterior:** el progreso guardado antes en el checkpoint de cada sesión se ignora, porque sus temas no tenían número. La sesión sigue funcionando y el progreso se reconstruye con las evaluaciones nuevas. La pizarra y `topic_progress` no requieren migración: una sesión existente empieza con ambas vacías.
+
+## Acceso desde el celular
+
+Con `SERVE_WEB_CLIENT=1` en el `.env`, el backend sirve también el cliente web compilado en su mismo puerto, y un túnel HTTPS lo deja abrir desde el celular sin VPN ni certificados. La PC tiene que estar encendida.
+
+1. Una sola vez: agrega `SERVE_WEB_CLIENT=1` al `.env`, compila el cliente (`npm install` y `npm run build` en `client/`) e instala [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
+2. Levanta el backend como en [Desarrollo local sin Docker](#desarrollo-local-sin-docker).
+3. Abre el túnel, que muestra una dirección `https://….trycloudflare.com`:
+
+   ```bash
+   cloudflared tunnel --url http://127.0.0.1:8000
+   ```
+
+   Con ngrok sirve igual: `ngrok http 8000`.
+
+4. Abre esa dirección en el celular y pega el `APP_TOKEN` en «Token del servidor».
+
+- La dirección es pública y cambia cada vez que se abre el túnel; lo que protege la app es el `APP_TOKEN`, que en este modo debe tener al menos 32 caracteres, o el backend no arranca.
+- Sin token solo se entregan los archivos estáticos del cliente; la API y el WebSocket lo siguen exigiendo, y el WebSocket acepta además el origen del propio túnel.
+- Tras cambiar el cliente hay que volver a compilarlo.
 
 ## Tests
 
