@@ -188,6 +188,16 @@ AREAS = {
                 "aprendizaje automático deben correr con eso y con sklearn.datasets, sin descargas."
             ),
         ),
+        Area(
+            name="mecanica_civil",
+            label="Mecánica y civil",
+            description="Estática, resistencia de materiales, vigas y estructuras, mecánica, termodinámica y fluidos.",
+            tools=("beam", "units"),
+            note=(
+                "Mecánica y civil: resuelve las vigas con la tool beam y convierte o comprueba "
+                "unidades con units antes de dar un resultado; escribe siempre las unidades."
+            ),
+        ),
     )
 }
 

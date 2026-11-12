@@ -1,5 +1,6 @@
 """Registro de tools: los arquetipos y el supervisor piden sus tools por nombre."""
 
+from core.tools.beam import beam_tool
 from core.tools.board import board_add, board_edit, get_board
 from core.tools.context import TurnContext
 from core.tools.documents import get_study_material, search_documents
@@ -7,12 +8,15 @@ from core.tools.logic import logic_tool
 from core.tools.progress import record_progress
 from core.tools.stats import stats_tool
 from core.tools.symbolic import math_tool
+from core.tools.units import units_tool
 from core.tools.web import build_web_search_tool, paper_search
 
 _STATIC_TOOLS = {
     "math": math_tool,
     "logic": logic_tool,
     "stats": stats_tool,
+    "beam": beam_tool,
+    "units": units_tool,
     "paper_search": paper_search,
     "search_documents": search_documents,
     "get_study_material": get_study_material,

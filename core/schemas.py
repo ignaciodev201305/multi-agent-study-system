@@ -13,7 +13,7 @@ ArchetypeName = Literal[
     "tutor_de_codigo",
 ]
 
-AreaName = Literal["informatica", "datos_ia"]
+AreaName = Literal["informatica", "datos_ia", "mecanica_civil"]
 
 
 class SelectedArchetype(BaseModel):
