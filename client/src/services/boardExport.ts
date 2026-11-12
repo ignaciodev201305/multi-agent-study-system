@@ -44,6 +44,13 @@ export const blockMarkdown = (block: BoardBlock): string => {
         .join('\n');
       return `Gráfico en x entre ${block.x_min} y ${block.x_max}:\n\n${functions}${marks ? `\n\nPuntos:\n\n${marks}` : ''}`;
     }
+    case 'chart': {
+      const axes = [block.x_label, block.y_label].filter(Boolean).join(' / ');
+      const series = block.series
+        .map((item, index) => `- ${item.label ?? `Serie ${index + 1}`}: ${item.points.length} puntos`)
+        .join('\n');
+      return `Gráfico de datos${axes ? ` (${axes})` : ''}:\n\n${series}`;
+    }
     case 'exercise': {
       const hints = (block.hints ?? []).map((hint, index) => `Pista ${index + 1}: ${hint}`);
       return [block.statement, ...hints, `Solución: ${block.solution}`].join('\n\n');

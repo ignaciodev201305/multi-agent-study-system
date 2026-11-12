@@ -69,6 +69,15 @@ export interface PlotMark {
   label?: string;
 }
 
+export type ChartMark = 'line' | 'scatter' | 'bar';
+
+// Serie de datos ya calculada por una tool del servidor.
+export interface ChartSeries {
+  label?: string;
+  mark: ChartMark;
+  points: [number, number][];
+}
+
 export type BoardBlockContent =
   | { kind: 'markdown'; text: string }
   | { kind: 'math'; latex: string }
@@ -85,6 +94,7 @@ export type BoardBlockContent =
     points?: PlotMark[];
     vlines?: number[];
   }
+  | { kind: 'chart'; series: ChartSeries[]; x_label?: string; y_label?: string }
   | { kind: 'exercise'; statement: string; hints?: string[]; solution: string };
 
 export type BoardBlock = BoardBlockContent & {

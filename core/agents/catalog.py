@@ -176,6 +176,18 @@ AREAS = {
                 "equivalencia antes de darla o de juzgar la del alumno."
             ),
         ),
+        Area(
+            name="datos_ia",
+            label="Datos e IA",
+            description="Estadística, probabilidad, análisis de datos, aprendizaje automático e inteligencia artificial.",
+            tools=("stats",),
+            note=(
+                "Datos e IA: verifica con la tool stats toda estadística, probabilidad, test o "
+                "regresión antes de darla. En la pestaña Python del alumno hay numpy, pandas, "
+                "scikit-learn, scipy y matplotlib, pero no PyTorch ni TensorFlow: los ejemplos de "
+                "aprendizaje automático deben correr con eso y con sklearn.datasets, sin descargas."
+            ),
+        ),
     )
 }
 

@@ -3,7 +3,7 @@
 import json
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 from config.settings import (
     BOARD_MAX_BLOCK_CHARS,
@@ -15,6 +15,8 @@ from config.settings import (
 MAX_TITLE_CHARS = 120
 MAX_PLOT_MARKS = 12
 MAX_EXERCISE_HINTS = 5
+MAX_CHART_SERIES = 4
+MAX_CHART_POINTS = 300
 # Bloques más recientes que el supervisor y los especialistas ven en su contexto.
 BOARD_CONTEXT_MAX_ENTRIES = 20
 TOPIC_FIELDS = ("topic_number", "topic")
@@ -117,6 +119,21 @@ class ExerciseBlock(_BoardModel):
     solution: str = Field(min_length=1)
 
 
+class ChartSeries(_BoardModel):
+    """Serie de puntos [x, y] ya calculados."""
+    label: str | None = None
+    mark: Literal["line", "scatter", "bar"] = "line"
+    points: list[tuple[FiniteFloat, FiniteFloat]] = Field(min_length=1, max_length=MAX_CHART_POINTS)
+
+
+class ChartBlock(_BoardModel):
+    """Gráfico de datos que arma una tool de cálculo; no forma parte del schema de board_add."""
+    kind: Literal["chart"]
+    series: list[ChartSeries] = Field(min_length=1, max_length=MAX_CHART_SERIES)
+    x_label: str | None = Field(default=None, max_length=MAX_TITLE_CHARS)
+    y_label: str | None = Field(default=None, max_length=MAX_TITLE_CHARS)
+
+
 BoardBlock = Annotated[
     MarkdownBlock | MathBlock | StepsBlock | TableBlock | CodeBlock | PlotBlock | ExerciseBlock,
     Field(discriminator="kind"),
@@ -131,11 +148,12 @@ class Board(BaseModel):
     ops_used: int = Field(default=0, exclude=True)
 
 
-def validate_block(block: BoardBlock) -> None:
+def validate_block(block: BoardBlock | ChartBlock) -> None:
     """Aplica los límites del bloque; los puntos de un gráfico no cuentan como contenido."""
     if isinstance(block, PlotBlock) and len(block.functions) > BOARD_MAX_PLOT_FUNCTIONS:
         raise BoardError(f"Un gráfico admite hasta {BOARD_MAX_PLOT_FUNCTIONS} funciones.")
-    if len(block.model_dump_json()) > BOARD_MAX_BLOCK_CHARS:
+    points = {"series": {"__all__": {"points"}}} if isinstance(block, ChartBlock) else None
+    if len(block.model_dump_json(exclude=points)) > BOARD_MAX_BLOCK_CHARS:
         raise BoardError(
             f"El bloque supera {BOARD_MAX_BLOCK_CHARS} caracteres: divídelo o resume su contenido."
         )
@@ -158,9 +176,10 @@ def _find(board: Board, block_id: str) -> int:
     raise BoardError(f"No existe el bloque {block_id}: consulta los ids con get_board.")
 
 
-def _content(block: BoardBlock, samples: list | None) -> dict:
+def _content(block: BoardBlock | ChartBlock, samples: list | None) -> dict:
     """Convierte el bloque en JSON y agrega los puntos de cada función."""
-    content = block.model_dump(exclude_none=True)
+    # En modo JSON los puntos quedan como listas, igual que al releer el checkpoint.
+    content = block.model_dump(mode="json", exclude_none=True)
     for function, points in zip(content.get("functions", []), samples or []):
         function["points"] = points
     return content
@@ -211,7 +230,7 @@ def _patch(board: Board, op: str, **fields) -> dict:
 
 def add_block(
     board: Board,
-    block: BoardBlock,
+    block: BoardBlock | ChartBlock,
     *,
     author: str,
     title: str | None = None,
@@ -281,12 +300,13 @@ def clear(board: Board) -> dict:
 def block_details(board: Board, block_id: str) -> str:
     """Devuelve el contenido de un bloque en JSON, sin los puntos de sus gráficos."""
     block = board.blocks[_find(board, block_id)]
-    details = {key: value for key, value in block.items() if key != "functions"}
-    if "functions" in block:
-        details["functions"] = [
-            {key: value for key, value in function.items() if key != "points"}
-            for function in block["functions"]
-        ]
+    details = dict(block)
+    # Las funciones de un plot y las series de un chart llevan los puntos.
+    for field in ("functions", "series"):
+        if field in block:
+            details[field] = [
+                {key: value for key, value in item.items() if key != "points"} for item in block[field]
+            ]
     return json.dumps(details, ensure_ascii=False)
 
 

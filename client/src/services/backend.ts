@@ -412,6 +412,12 @@ const isBoardBlock = (value: unknown): value is BoardBlock => {
         && Array.isArray(value.functions)
         && value.functions.every((item) => isRecord(item)
           && typeof item.expression === 'string' && Array.isArray(item.points));
+    case 'chart':
+      return Array.isArray(value.series) && value.series.length > 0
+        && value.series.every((item) => isRecord(item)
+          && (item.mark === 'line' || item.mark === 'scatter' || item.mark === 'bar')
+          && Array.isArray(item.points) && item.points.length > 0
+          && item.points.every((point) => Array.isArray(point) && typeof point[0] === 'number' && typeof point[1] === 'number'));
     case 'exercise':
       return typeof value.statement === 'string' && typeof value.solution === 'string'
         && (value.hints === undefined || isStringList(value.hints));

@@ -70,6 +70,7 @@ function BlockContent({ block, onOpenInPython, onAskTutor }: BlockContentProps):
         />
       );
     case 'plot':
+    case 'chart':
       return <PlotBlock block={block} title={block.title} />;
     case 'exercise':
       return <ExerciseBlock block={block} blockId={block.id} onAskTutor={onAskTutor} />;

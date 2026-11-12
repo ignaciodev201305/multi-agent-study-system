@@ -100,7 +100,7 @@ La configuración usa Electron 44 y electron-builder 27.0.0-alpha.10.
 
 La sesión tiene un panel a la derecha con tres pestañas. Se cierra con su botón y se reabre desde «Pizarra», en la barra superior; su estado y la pestaña activa se recuerdan. Por debajo de 1100 px se abre como capa sobre la conversación. Por debajo de 760 px ocupa toda la pantalla (ver [Pantallas angostas y táctiles](#pantallas-angostas-y-táctiles)).
 
-- **Pizarra:** muestra los bloques de la sesión y permite exportarlos a Markdown. No se guarda en el navegador: la fuente de verdad es el servidor. El contenido de los bloques es texto no confiable y se renderiza sin `dangerouslySetInnerHTML`.
+- **Pizarra:** muestra los bloques de la sesión y permite exportarlos a Markdown. Los gráficos de funciones (`plot`) y los de datos (`chart`, con líneas, puntos o barras) comparten el mismo componente SVG. No se guarda en el navegador: la fuente de verdad es el servidor. El contenido de los bloques es texto no confiable y se renderiza sin `dangerouslySetInnerHTML`.
 - **Progreso:** muestra el temario con el estado de cada tema, la próxima fecha de repaso y la última evidencia. Se refresca al abrir la pestaña y con cada turno.
 - **Python:** editor y ejecución en el navegador.
 

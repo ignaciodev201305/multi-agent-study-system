@@ -30,6 +30,7 @@ const kindText: Record<BoardBlockData['kind'], string> = {
   table: 'Tablas',
   code: 'Código',
   plot: 'Gráficos',
+  chart: 'Gráficos de datos',
   exercise: 'Ejercicios',
 };
 
