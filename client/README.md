@@ -119,6 +119,16 @@ Por debajo de 760 px la sesión usa una sola columna, pensada para el celular:
 
 La ventana de Electron mantiene su ancho mínimo de 760 px.
 
+## Instalar en el celular
+
+Servido por HTTPS (ver [Acceso desde el celular](../README.md#acceso-desde-el-celular)), el cliente es una PWA: en Chrome para Android, menú → «Agregar a la pantalla principal» o «Instalar app» deja un ícono que abre la aplicación sin la barra del navegador.
+
+- `public/manifest.webmanifest` declara el nombre, el modo `standalone` y los íconos de `public/icons/`, generados desde `build/icon.png` (192 y 512 px, y uno `maskable` con el logo al 80 % sobre `#101113`).
+- `public/sw.js` guarda solo el shell: `index.html`, `/assets/`, los íconos y el manifest. No intercepta `/api/`, el WebSocket, peticiones que no sean `GET` ni otros orígenes (Pyodide), así que ni el token ni las respuestas del backend quedan en caché.
+- Se registra solo en la versión compilada y bajo `https:`; en Electron y con Vite no hay service worker.
+- Con el shell guardado, la app abre aunque la PC esté apagada y la pantalla de inicio explica por qué no cargan las sesiones.
+- Al cambiar la lista de rutas guardadas, sube la versión de `CACHE` en `sw.js` para descartar la caché anterior.
+
 ## Modelos
 
 El botón «Modelos» abre el panel de configuración. Desde la pantalla de inicio edita los modelos globales, y desde la barra de la sesión, los de esa sesión.
