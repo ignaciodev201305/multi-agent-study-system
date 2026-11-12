@@ -5,6 +5,7 @@ from core.tools.board import board_add, board_edit, get_board
 from core.tools.context import TurnContext
 from core.tools.documents import get_study_material, search_documents
 from core.tools.logic import logic_tool
+from core.tools.numeric import numeric_tool
 from core.tools.progress import record_progress
 from core.tools.stats import stats_tool
 from core.tools.symbolic import math_tool
@@ -17,6 +18,7 @@ _STATIC_TOOLS = {
     "stats": stats_tool,
     "beam": beam_tool,
     "units": units_tool,
+    "numeric": numeric_tool,
     "paper_search": paper_search,
     "search_documents": search_documents,
     "get_study_material": get_study_material,

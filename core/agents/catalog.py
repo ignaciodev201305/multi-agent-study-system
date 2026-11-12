@@ -180,10 +180,10 @@ AREAS = {
             name="datos_ia",
             label="Datos e IA",
             description="Estadística, probabilidad, análisis de datos, aprendizaje automático e inteligencia artificial.",
-            tools=("stats",),
+            tools=("stats", "numeric"),
             note=(
                 "Datos e IA: verifica con la tool stats toda estadística, probabilidad, test o "
-                "regresión antes de darla. En la pestaña Python del alumno hay numpy, pandas, "
+                "regresión antes de darla, y usa numeric para optimizar o integrar numéricamente. En la pestaña Python del alumno hay numpy, pandas, "
                 "scikit-learn, scipy y matplotlib, pero no PyTorch ni TensorFlow: los ejemplos de "
                 "aprendizaje automático deben correr con eso y con sklearn.datasets, sin descargas."
             ),
@@ -192,10 +192,11 @@ AREAS = {
             name="mecanica_civil",
             label="Mecánica y civil",
             description="Estática, resistencia de materiales, vigas y estructuras, mecánica, termodinámica y fluidos.",
-            tools=("beam", "units"),
+            tools=("beam", "units", "numeric"),
             note=(
                 "Mecánica y civil: resuelve las vigas con la tool beam y convierte o comprueba "
-                "unidades con units antes de dar un resultado; escribe siempre las unidades."
+                "unidades con units antes de dar un resultado; escribe siempre las unidades. Para "
+                "ecuaciones diferenciales o sistemas sin solución cerrada usa numeric."
             ),
         ),
     )
