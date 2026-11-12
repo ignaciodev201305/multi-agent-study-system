@@ -51,6 +51,8 @@ export function PythonPanel({ hidden, code, onCodeChange, onShare }: PythonPanel
     <div className={styles.pythonPanel} hidden={hidden}>
       <textarea
         aria-label="Código Python"
+        autoCapitalize="off"
+        autoCorrect="off"
         className={styles.pythonEditor}
         maxLength={MAX_CODE_CHARS}
         onChange={(event) => onCodeChange(event.target.value)}

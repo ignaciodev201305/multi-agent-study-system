@@ -82,6 +82,17 @@ export default function App(): JSX.Element {
     return () => window.clearTimeout(timer);
   }, [authToken, backendUrl, loadSessions]);
 
+  // El sistema corta el WebSocket con la app en segundo plano; al volver se recupera del servidor.
+  useEffect(() => {
+    const handleVisibility = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      void loadSessions();
+      if (isSessionView) void resyncSession(activeSessionId);
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [activeSessionId, isSessionView, loadSessions, resyncSession]);
+
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent): void => {
       const modifier = event.ctrlKey || event.metaKey;

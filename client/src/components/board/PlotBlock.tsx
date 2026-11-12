@@ -133,6 +133,8 @@ export const PlotBlock = memo(function PlotBlock({ block, title }: PlotBlockProp
       <div className={styles.plotChart} ref={chart}>
         <svg
           aria-label={`Gráfico de ${labels.join(', ')} con x entre ${block.x_min} y ${block.x_max}`}
+          onPointerCancel={() => setHoverIndex(null)}
+          onPointerDown={handlePointerMove}
           onPointerLeave={() => setHoverIndex(null)}
           onPointerMove={handlePointerMove}
           role="img"

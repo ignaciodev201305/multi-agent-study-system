@@ -22,6 +22,8 @@ const typeLabel: Record<DocumentType, string> = {
 };
 
 const ACCEPTED = 'application/pdf,.pdf';
+// Sin puntero fino no se puede arrastrar un archivo.
+const TOUCH_ONLY = window.matchMedia('(pointer: coarse)').matches;
 const STATUS_POLL_INTERVAL_MS = 1500;
 const processingStatusText: Record<DocumentProcessingStatus, string> = {
   queued: 'En cola',
@@ -131,7 +133,7 @@ export function DocsPanel({ sessionId, backendUrl, documents, locked = false, op
               />
               <span className={styles.dropzoneBadge} aria-hidden="true">PDF</span>
               <span className={styles.dropzoneText}>
-                {selectedFile ? selectedFile.name : 'Elige o arrastra un PDF'}
+                {selectedFile ? selectedFile.name : TOUCH_ONLY ? 'Toca para elegir un PDF' : 'Elige o arrastra un PDF'}
               </span>
             </label>
 

@@ -17,6 +17,9 @@ const placeholders: Record<ComposerProps['phase'], string> = {
   study: 'Escribe un mensaje…',
 };
 
+// Con teclado táctil, Enter inserta un salto de línea y se envía con el botón.
+const usesTouchKeyboard = (): boolean => window.matchMedia('(pointer: coarse)').matches;
+
 const resize = (target: HTMLTextAreaElement): void => {
   target.style.height = 'auto';
   target.style.height = `${Math.min(target.scrollHeight, 180)}px`;
@@ -60,7 +63,7 @@ export function Composer({ phase, isBusy, deepMode, draft, onDraftApplied, onSen
           disabled={isBusy}
           onInput={(event) => resize(event.currentTarget)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
+            if (event.key === 'Enter' && !event.shiftKey && !usesTouchKeyboard()) {
               event.preventDefault();
               submit();
             }

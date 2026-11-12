@@ -98,13 +98,26 @@ La configuración usa Electron 44 y electron-builder 27.0.0-alpha.10.
 
 ## Panel lateral
 
-La sesión tiene un panel a la derecha con tres pestañas. Se cierra con su botón y se reabre desde «Pizarra», en la barra superior; su estado y la pestaña activa se recuerdan. Por debajo de 1100 px se abre como capa sobre la conversación.
+La sesión tiene un panel a la derecha con tres pestañas. Se cierra con su botón y se reabre desde «Pizarra», en la barra superior; su estado y la pestaña activa se recuerdan. Por debajo de 1100 px se abre como capa sobre la conversación. Por debajo de 760 px ocupa toda la pantalla (ver [Pantallas angostas y táctiles](#pantallas-angostas-y-táctiles)).
 
 - **Pizarra:** muestra los bloques de la sesión y permite exportarlos a Markdown. No se guarda en el navegador: la fuente de verdad es el servidor. El contenido de los bloques es texto no confiable y se renderiza sin `dangerouslySetInnerHTML`.
 - **Progreso:** muestra el temario con el estado de cada tema, la próxima fecha de repaso y la última evidencia. Se refresca al abrir la pestaña y con cada turno.
 - **Python:** editor y ejecución en el navegador.
 
 La pantalla de inicio agrega «Para repasar hoy» con los repasos vencidos de `GET /reviews/due`, con el título de la sesión que devuelve el servidor.
+
+## Pantallas angostas y táctiles
+
+Por debajo de 760 px la sesión usa una sola columna, pensada para el celular:
+
+- «Material» y el panel lateral se abren como capas a pantalla completa y empiezan cerrados; la barra superior se desplaza en horizontal si no caben sus botones.
+- La altura sigue al teclado en pantalla (`100dvh` e `interactive-widget=resizes-content`) y se respeta el área segura (`env(safe-area-inset-*)`).
+- Sin puntero fino (`pointer: coarse`), los botones miden al menos 38–44 px, el cuadro de mensaje usa 16 px y Enter inserta un salto de línea: se envía con el botón.
+- Sin hover, el botón de borrar sesión queda siempre visible.
+- En los gráficos, tocar o arrastrar en horizontal muestra los valores; el arrastre vertical desplaza la pizarra.
+- Al volver de segundo plano se recargan la lista y la sesión abierta, porque el sistema corta el WebSocket mientras la app no está visible.
+
+La ventana de Electron mantiene su ancho mínimo de 760 px.
 
 ## Modelos
 

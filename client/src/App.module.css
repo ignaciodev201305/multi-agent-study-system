@@ -19,7 +19,10 @@
   flex-direction: column;
   width: 100%;
   height: 100vh;
+  height: 100dvh;
   min-height: 560px;
+  padding-right: env(safe-area-inset-right);
+  padding-left: env(safe-area-inset-left);
   overflow: hidden;
   color: var(--text);
   background: var(--surface);
@@ -236,7 +239,7 @@
 
 .plot { display: flex; width: 100%; max-width: 760px; min-width: 0; flex-direction: column; gap: 6px; margin: 0 auto; }
 .plotChart { position: relative; }
-.plotChart svg { display: block; width: 100%; height: auto; touch-action: none; }
+.plotChart svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
 .plotGrid { stroke: var(--border); stroke-width: 1; }
 .plotAxis { stroke: var(--border-strong); stroke-width: 1; }
 .plotTick { fill: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
@@ -422,6 +425,55 @@
   .topbar { padding-right: 15px; padding-left: 15px; }
   .messageColumn { width: min(100% - 34px, 740px); }
   .welcomePanel { width: min(100% - 34px, 670px); }
+}
+
+/* Pantalla angosta: una columna, con el material y el panel de estudio como capas completas. */
+@media (max-width: 760px) {
+  .root { min-height: 0; }
+  .homeHeader { height: calc(58px + env(safe-area-inset-top)); flex-basis: calc(58px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 16px 0; }
+  .homeBody { width: min(100% - 32px, 1120px); gap: 24px; padding: 24px 0 calc(28px + env(safe-area-inset-bottom)); }
+  .workspace { min-width: 0; }
+  .topbar { height: calc(55px + env(safe-area-inset-top)); flex-basis: calc(55px + env(safe-area-inset-top)); gap: 6px; padding: env(safe-area-inset-top) 10px 0; }
+  .topbarLeft { flex: 1 1 96px; }
+  .topbarActions { min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }
+  .phaseLabel { display: none; }
+  .docsPanel { position: absolute; z-index: 6; inset: 0; padding-top: calc(15px + env(safe-area-inset-top)); padding-bottom: calc(14px + env(safe-area-inset-bottom)); border-right: 0; transition: none; }
+  .docsPanel[data-closed] { display: none; }
+  .studyPanel, .appShell[data-docs-closed] .studyPanel, .appShell[data-focused] .studyPanel { position: absolute; z-index: 5; inset: 0; width: 100%; min-width: 0; border-left: 0; box-shadow: none; }
+  .appShell[data-focused] .workspace { flex: 1; }
+  .studyPanelHeader { height: calc(55px + env(safe-area-inset-top)); flex-basis: calc(55px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
+  .studyPanelBody { padding-bottom: env(safe-area-inset-bottom); }
+  .panelResizer { display: none; }
+  .messageColumn { width: min(100% - 28px, 740px); padding-top: 18px; }
+  .welcomePanel { width: min(100% - 28px, 670px); }
+  .messageUser { max-width: 92%; }
+  .composerWrap { width: min(100% - 20px, 760px); padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .modelDialog { max-height: calc(100dvh - 24px); }
+}
+
+/* Sin puntero fino: objetivos táctiles amplios y texto que no obliga a hacer zoom. */
+@media (pointer: coarse) {
+  .iconButton, .sendButton { width: 44px; height: 44px; flex-basis: 44px; }
+  .iconButton svg { width: 20px; height: 20px; }
+  .themeButton, .usageIndicator { min-height: 40px; padding-right: 10px; padding-left: 10px; font-size: 13px; }
+  .deepToggle { height: 44px; padding: 0 12px; font-size: 13px; }
+  .typeOption { height: 38px; font-size: 13px; }
+  .uploadCta, .pythonButton, .loadEarlier { height: 44px; font-size: 13px; }
+  .primaryButton { min-height: 46px; }
+  .primaryButton kbd, .composerHint span:first-child { display: none; }
+  .panelActions button, .boardBlockActions button, .boardExerciseActions button, .boardCodeBar button { min-height: 38px; padding-right: 10px; padding-left: 10px; font-size: 12px; }
+  .boardFilters input, .boardFilters select, .modelEffort select, .modelPickerSearch input { height: 40px; font-size: 16px; }
+  .homeBackend input { height: 42px; font-size: 14px; }
+  .composerBox textarea { font-size: 16px; }
+  .pythonEditor { font-size: 14px; }
+  .dropzone { min-height: 92px; }
+  .dropzoneText { font-size: 13px; }
+  .recentButton { min-height: 52px; }
+}
+
+/* Sin hover no hay forma de descubrir el botón de borrar. */
+@media (hover: none) {
+  .deleteSessionButton { width: 44px; height: 44px; flex-basis: 44px; opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

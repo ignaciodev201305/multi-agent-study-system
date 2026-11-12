@@ -34,6 +34,8 @@ const defaultBackendUrl = (): string => {
 };
 
 const DEFAULT_BACKEND_URL = defaultBackendUrl();
+// En pantallas angostas los paneles son capas completas: empiezan cerrados.
+const PANELS_OPEN_BY_DEFAULT = !window.matchMedia('(max-width: 760px)').matches;
 export const DEFAULT_SIDE_PANEL_WIDTH = 348;
 const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
 const MAX_PYTHON_CODE_CHARS = 20_000;
@@ -186,8 +188,8 @@ export const useStudyStore = create<StudyState>()(
       theme: 'dark',
       backendUrl: DEFAULT_BACKEND_URL,
       authToken: '',
-      docsPanelOpen: true,
-      sidePanelOpen: true,
+      docsPanelOpen: PANELS_OPEN_BY_DEFAULT,
+      sidePanelOpen: PANELS_OPEN_BY_DEFAULT,
       sidePanelWidth: DEFAULT_SIDE_PANEL_WIDTH,
       sidePanelTab: 'board',
       pythonCode: {},
