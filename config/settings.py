@@ -111,6 +111,8 @@ WS_MAX_TURNS_PER_MINUTE = max(1, int(os.environ.get("WS_MAX_TURNS_PER_MINUTE", "
 
 # Tiempo máximo de cada cálculo de la tool math.
 MATH_TIMEOUT_SECONDS = max(1, int(os.environ.get("MATH_TIMEOUT_SECONDS", "8")))
+# Tiempo máximo de cada cálculo de las tools de área.
+TOOL_WORKER_TIMEOUT_SECONDS = max(1, int(os.environ.get("TOOL_WORKER_TIMEOUT_SECONDS", "10")))
 # Pasos máximos del supervisor por turno.
 SUPERVISOR_RECURSION_LIMIT = max(5, int(os.environ.get("SUPERVISOR_RECURSION_LIMIT", "40")))
 # Llamadas al modelo por turno; la última se hace sin tools para que el agente cierre con una respuesta.

@@ -15,7 +15,7 @@ from config.settings import (
     SPECIALIST_MAX_MODEL_CALLS,
     SUPERVISOR_MAX_MODEL_CALLS,
 )
-from core.agents.catalog import ARCHETYPES, Archetype, archetype_prompt
+from core.agents.catalog import ARCHETYPES, Archetype, archetype_prompt, area_notes, area_tools
 from core.agents.middleware import CallLimitMiddleware, PromptCacheMiddleware
 from core.board import BOARD_CONTEXT_MAX_ENTRIES, board_inventory
 from core.llm import build_model
@@ -64,16 +64,21 @@ SPECIALIST_LIMIT_NOTE = (
 SUPERVISOR_LIMIT_MESSAGE = "No alcancé a terminar en este turno. Escribe «sigue» y continúo desde aquí."
 
 
-def _subagent_tool(archetype: Archetype, focus: str, models: dict):
+def _subagent_tool(archetype: Archetype, focus: str, models: dict, areas: list[str] | tuple[str, ...] = ()):
     """Envuelve un subagente como tool: recibe un pedido autocontenido y devuelve su respuesta."""
     role = f"subagent_{archetype.tier}"
     model = build_model(role, temperature=archetype.temperature, resolved=models.get(role))
     rules = MATH_FORMAT_RULE
+    tools = archetype.tools
     if "math" in archetype.tools:
         rules += f"\n{MATH_VERIFY_RULE}"
+        # Las tools de área acompañan a math: solo calculan los arquetipos que ya verifican.
+        tools += area_tools(areas)
+        if areas:
+            rules += f"\n\n{area_notes(areas)}"
     subagent = create_agent(
         model,
-        tools=build_tools(archetype.tools),
+        tools=build_tools(tools),
         system_prompt=f"{archetype_prompt(archetype, focus)}\n\n{rules}",
         context_schema=TurnContext,
         name=archetype.name,
@@ -127,11 +132,11 @@ class SupervisorBuilder:
     def build(self):
         """Crea el supervisor con sus especialistas y tools; en modo profundo, como deep agent."""
         specialists = [
-            _subagent_tool(ARCHETYPES[selected.archetype], selected.focus, self.models)
+            _subagent_tool(ARCHETYPES[selected.archetype], selected.focus, self.models, self.study_plan.areas)
             for selected in self.study_plan.archetypes
         ]
         model = build_model("supervisor", resolved=self.models.get("supervisor"))
-        tools = specialists + build_tools(SUPERVISOR_TOOLS)
+        tools = specialists + build_tools(SUPERVISOR_TOOLS + area_tools(self.study_plan.areas))
         if self.deep:
             return self._build_deep(model, tools)
         return create_agent(
@@ -181,9 +186,10 @@ class SupervisorBuilder:
             f"- {selected.archetype}: {ARCHETYPES[selected.archetype].description}"
             for selected in plan.archetypes
         )
-        return SUPERVISOR_PROMPT.format(
+        prompt = SUPERVISOR_PROMPT.format(
             subject=plan.subject,
             supervisor_focus=plan.supervisor_focus,
             syllabus=syllabus,
             specialists=specialists,
         ) + f"\n\n{MATH_FORMAT_RULE}\n{MATH_VERIFY_RULE}\n{DOCUMENT_TOOL_RULES}"
+        return f"{prompt}\n{area_notes(plan.areas)}" if plan.areas else prompt

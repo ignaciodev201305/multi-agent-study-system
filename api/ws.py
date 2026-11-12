@@ -22,7 +22,7 @@ from api.security import (
     websocket_token,
 )
 from config.settings import WS_MAX_MESSAGE_CHARS
-from core.agents.catalog import ARCHETYPES
+from core.agents.catalog import ARCHETYPES, AREAS
 from core.chats import ChatRepository
 from core.streaming import execute_astream_graph, token_text
 from core.study.repository import ProgressRepository
@@ -374,8 +374,10 @@ async def _process_message(
         )
     else:
         title = result["classified_context"].title_session
+        labels = ", ".join(AREAS[area].label for area in result["study_plan"].areas)
         await _save_message(
-            state.chat_repository, thread_id, "system", CONTEXT_APPROVED_TEXT,
+            state.chat_repository, thread_id, "system",
+            f"{CONTEXT_APPROVED_TEXT} Herramientas de área: {labels}." if labels else CONTEXT_APPROVED_TEXT,
             phase="study", title=(title or "").strip() or None,
         )
         await sender.send_json({

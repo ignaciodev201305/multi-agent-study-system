@@ -54,6 +54,18 @@ def _check_can_replace(context: TurnContext, block_id: str) -> None:
             raise BoardError(f"{block_id} es de {block['author']}: solo puedes reemplazar bloques tuyos.")
 
 
+def publish_block(runtime: ToolRuntime[TurnContext], block, title: str) -> str:
+    """Agrega a la pizarra el resultado de una tool de cálculo y devuelve el aviso para el modelo."""
+    context = runtime.context
+    try:
+        patch = add_block(context.board, block, author=context.author, title=title)
+    except BoardError as error:
+        return f"No se agregó a la pizarra: {error}"
+    runtime.stream_writer(patch)
+    block_id = patch["block"]["id"]
+    return f"Agregado a la pizarra como {block_id}; cítalo como [[{block_id}]]."
+
+
 @tool
 async def board_add(
     block: BoardBlock,

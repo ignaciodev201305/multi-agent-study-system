@@ -49,6 +49,19 @@ El alumno ejecuta Python en el cliente con Pyodide, dentro de un Web Worker. El 
 
 Los detalles están en [client/README.md](client/README.md#python-con-pyodide).
 
+### Áreas y herramientas
+
+Además de `math`, una sesión puede sumar tools de cálculo propias de un área. El planificador elige de 0 a 2 áreas al aprobar el contexto, en la misma llamada que elige los especialistas, y el aviso «Contexto aprobado» las nombra. Una sesión sin área no carga ninguna tool extra.
+
+| Área | Tools | Para qué |
+|---|---|---|
+| `informatica` | `logic` | Tablas de verdad, simplificación en suma de productos o producto de sumas (Karnaugh) y equivalencia de expresiones booleanas, hasta 8 variables. |
+
+- Las reciben el profesor principal y los especialistas que ya tienen `math`.
+- El modelo solo envía parámetros: cada tool los valida contra una lista blanca y calcula en un subproceso aislado (`python -I`), con límite de memoria y de tiempo (`TOOL_WORKER_TIMEOUT_SECONDS`). Nunca se ejecuta texto del modelo.
+- Con `board_title`, la tool deja el resultado completo en la pizarra (por ejemplo, la tabla de verdad) y al modelo le devuelve solo un resumen, para no gastar contexto.
+- El área queda fija en el plan de la sesión. Las sesiones anteriores siguen sin área.
+
 ### Modo profundo
 
 El botón «Profundo» del cuadro de mensaje activa, solo para esa sesión, un profesor principal construido con [Deep Agents](https://docs.langchain.com/oss/python/deepagents/overview) (`create_deep_agent`), pensado para cálculos complejos e investigaciones largas. Está apagado por defecto y se apaga al recargar el cliente.
@@ -124,9 +137,9 @@ El servidor es la fuente de verdad de las sesiones: se pueden abrir desde cualqu
 |---|---|
 | `api/` | API FastAPI. `app.py`: lifespan (grafos, workers de documentos) y wiring. `ws.py`: WebSocket de sesión `/ws/{thread_id}` con lock por turno, heartbeat y "la última conexión gana". `routes.py`: `GET /chats`, `GET /chats/{id}/messages`, `GET /chats/{id}/progress`, `GET /reviews/due`, `GET /chats/{id}/usage`, los endpoints de modelos, `GET`/`POST /chats/{id}/pdfs` y `DELETE /chats/{id}`. `security.py`: token local, validación de ids y límites. `cors.py`: orígenes permitidos. |
 | `config/` | `settings.py`: registro de modelos por rol (`MODEL_ROLES`, con override por entorno), rutas de datos y límites. |
-| `core/` | Grafos y agentes. `graphs/` (`study.py`: grafo padre con un checkpointer; `context.py`: subgrafo de contexto; `session.py`: nodos del turno), `agents/` (`catalog.py`: arquetipos por función y técnicas pedagógicas; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `chats.py` (sesiones y transcripción en SQLite), `study/` (`scheduler.py`: calendario Leitner; `repository.py`: progreso e historial en SQLite), `tools/` (`math` con SymPy en subproceso, `search_documents` con páginas, `get_study_material`, `record_progress`, `web_search` y las tools de pizarra). `board.py` define los bloques y las operaciones de la pizarra, `model_catalog.py` consulta OpenRouter, `model_settings.py` guarda las preferencias y resuelve el modelo de cada rol, `usage.py` registra y guarda los tokens y el costo de cada llamada, `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
+| `core/` | Grafos y agentes. `graphs/` (`study.py`: grafo padre con un checkpointer; `context.py`: subgrafo de contexto; `session.py`: nodos del turno), `agents/` (`catalog.py`: arquetipos por función, técnicas pedagógicas y áreas con sus tools; `builder.py`: supervisor con `create_agent` y subagentes expuestos como tools), `prompts/` (por grafo), `chats.py` (sesiones y transcripción en SQLite), `study/` (`scheduler.py`: calendario Leitner; `repository.py`: progreso e historial en SQLite), `tools/` (`math` con SymPy en subproceso, las tools de área como `logic` con su worker, `search_documents` con páginas, `get_study_material`, `record_progress`, `web_search` y las tools de pizarra). `board.py` define los bloques y las operaciones de la pizarra, `model_catalog.py` consulta OpenRouter, `model_settings.py` guarda las preferencias y resuelve el modelo de cada rol, `usage.py` registra y guarda los tokens y el costo de cada llamada, `llm.py` construye modelos por rol, `chain.py` cadenas, `streaming.py` envía los eventos por WebSocket; `schemas.py` y `states.py` contienen modelos Pydantic y estados. |
 | `documents/` | Procesamiento de PDFs en segundo plano. `pipeline.py`: Docling en un proceso aparte, índice Chroma y resumen por documento. `repository.py`: catálogo SQLite (estado y resumen de cada documento). `worker.py` procesa la cola, `cleanup.py` elimina archivos y vectores huérfanos y `storage.py` borra los directorios de cada sesión. |
-| `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos, caché LRU de supervisores, agentes, grafo de estudio, tool `math`, pizarra, calendario, progreso, modelos y uso). |
+| `tests/` | Pruebas `unittest` (WebSocket, seguridad, historial, catálogo de documentos, caché LRU de supervisores, agentes, grafo de estudio, tools `math` y `logic`, pizarra, calendario, progreso, modelos y uso). |
 | `client/` | Cliente Electron, React y Vite. Ver [client/README.md](client/README.md). |
 
 Archivos de la raíz:
@@ -155,7 +168,7 @@ cp .env.example .env
 | `TAVILY_API_KEY` | Clave de Tavily para la búsqueda web del clasificador de contexto y del arquetipo investigador. |
 | `APP_TOKEN` | Token local obligatorio. La API lo exige en HTTP (`Authorization: Bearer`) y en el WebSocket (subprotocolo `token.<APP_TOKEN>`); sin él no arranca. Genéralo con `python -c "import secrets; print(secrets.token_hex(32))"` La app de Electron lo lee de este `.env` cuando el backend es local; en el navegador o con un servidor remoto, pégalo en el campo «Token del servidor» de la pantalla de inicio. |
 
-Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `CHAT_MESSAGES_MAX_ENTRIES` (500), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `SUPERVISOR_RECURSION_LIMIT` (40), `DEEP_SUPERVISOR_RECURSION_LIMIT` (150), `DEEP_SUPERVISOR_MAX_MODEL_CALLS` (20), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8), `BOARD_MAX_PLOT_FUNCTIONS` (4) y `AUTH_MAX_FAILURES_PER_MINUTE` (10).
+Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `CHAT_MESSAGES_MAX_ENTRIES` (500), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `TOOL_WORKER_TIMEOUT_SECONDS` (10), `SUPERVISOR_RECURSION_LIMIT` (40), `DEEP_SUPERVISOR_RECURSION_LIMIT` (150), `DEEP_SUPERVISOR_MAX_MODEL_CALLS` (20), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8), `BOARD_MAX_PLOT_FUNCTIONS` (4) y `AUTH_MAX_FAILURES_PER_MINUTE` (10).
 
 `ALLOWED_EXTRA_ORIGINS` agrega orígenes `https` exactos, separados por comas, para abrir el cliente web desde otro dispositivo (ver [Acceso desde el celular](#acceso-desde-el-celular)). Sin ella, la API solo acepta orígenes de esta máquina.
 

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import get_args
 
-from core.schemas import ArchetypeName
+from core.schemas import ArchetypeName, AreaName
 
 TECHNIQUES = {
     "socratico": (
@@ -148,6 +148,53 @@ ARCHETYPES = {
 }
 
 assert set(ARCHETYPES) == set(get_args(ArchetypeName)), "El catálogo y ArchetypeName deben coincidir"
+
+
+@dataclass(frozen=True)
+class Area:
+    """Perfil de área: tools de cálculo que se suman a la sesión y una nota para los prompts."""
+    name: str
+    # Nombre que ve el alumno.
+    label: str
+    # La lee el factory.
+    description: str
+    tools: tuple[str, ...]
+    note: str
+
+
+AREAS = {
+    area.name: area
+    for area in (
+        Area(
+            name="informatica",
+            label="Informática",
+            description="Lógica digital y proposicional, álgebra de Boole, circuitos combinacionales.",
+            tools=("logic",),
+            note=(
+                "Lógica: verifica con la tool logic toda tabla de verdad, simplificación o "
+                "equivalencia antes de darla o de juzgar la del alumno."
+            ),
+        ),
+    )
+}
+
+assert set(AREAS) == set(get_args(AreaName)), "Las áreas y AreaName deben coincidir"
+
+
+def areas_for_factory() -> str:
+    """Listado que lee el factory para elegir áreas."""
+    return "\n".join(f"- {area.name}: {area.description}" for area in AREAS.values())
+
+
+def area_tools(names) -> tuple[str, ...]:
+    """Tools de cálculo de las áreas elegidas, sin repetir."""
+    return tuple(dict.fromkeys(tool for name in names for tool in AREAS[name].tools))
+
+
+def area_notes(names) -> str:
+    """Notas de prompt de las áreas elegidas; vacío si no hay ninguna."""
+    notes = "\n".join(f"- {AREAS[name].note}" for name in names)
+    return f"ÁREA DE LA SESIÓN:\n{notes}" if notes else ""
 
 
 def catalog_for_factory() -> str:

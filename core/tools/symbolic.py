@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Literal
@@ -13,18 +14,23 @@ from config.settings import MATH_TIMEOUT_SECONDS
 WORKER = Path(__file__).with_name("math_worker.py")
 
 
-async def run_math(request: dict) -> dict:
-    """Ejecuta la operación en `python -I math_worker.py`; lo mata si supera el timeout."""
+# Un solo hilo de BLAS por worker: los cálculos son chicos y cada hilo reserva memoria virtual.
+WORKER_ENVIRONMENT = {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"}
+
+
+async def run_worker(worker: Path, request: dict, timeout: float) -> dict:
+    """Ejecuta la petición en `python -I <worker>`; lo mata si supera el timeout."""
     process = await asyncio.create_subprocess_exec(
-        sys.executable, "-I", str(WORKER),
+        sys.executable, "-I", str(worker),
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
+        env={**os.environ, **WORKER_ENVIRONMENT},
     )
     try:
         stdout, _ = await asyncio.wait_for(
             process.communicate(json.dumps(request).encode("utf-8")),
-            timeout=MATH_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except asyncio.TimeoutError:
         process.kill()
@@ -34,6 +40,11 @@ async def run_math(request: dict) -> dict:
         return json.loads(stdout.decode("utf-8") or "{}")
     except (json.JSONDecodeError, UnicodeDecodeError):
         return {"error": "El cálculo falló."}
+
+
+async def run_math(request: dict) -> dict:
+    """Ejecuta una operación de SymPy en el worker de matemática."""
+    return await run_worker(WORKER, request, MATH_TIMEOUT_SECONDS)
 
 
 @tool("math")

@@ -47,6 +47,9 @@ DATOS DE LA SESIÓN:
 CATÁLOGO DE ESPECIALISTAS (elige por función, no por subtema):
 {catalog}
 
+ÁREAS CON HERRAMIENTAS DE CÁLCULO:
+{areas}
+
 Reglas:
 1. subject: el tema en pocas palabras.
 2. syllabus: de 2 a 8 puntos, ordenados de menor a mayor dependencia. Ajusta al nivel:
@@ -60,11 +63,13 @@ Reglas:
 4. focus de cada especialista (máx. 80 palabras): tema, alcance y nivel con que trabaja en
    esta sesión; menciona qué NO le corresponde si se solapa con otro.
 5. supervisor_focus (máx. 120 palabras): nivel del alumno, objetivo y ritmo de la sesión.
+6. areas: de 0 a 2 áreas de la lista, solo si el tema pertenece claramente a ellas. Si ninguna
+   aplica (matemática pura, idiomas, historia), deja la lista vacía.
 """
 
 # Solo para los modelos que no entregan salida estructurada.
 STUDY_PLAN_JSON_RULES = """
-6. Todas las claves y valores del JSON van entre comillas dobles. Si necesitas citar algo dentro
+7. Todas las claves y valores del JSON van entre comillas dobles. Si necesitas citar algo dentro
    de un texto, usa comillas simples solo dentro de ese texto.
 
 Responde únicamente con JSON válido, sin texto adicional.

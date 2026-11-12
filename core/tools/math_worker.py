@@ -30,18 +30,17 @@ UNICODE_REPLACEMENTS = {
 }
 
 
-def _limit_resources() -> None:
+def limit_resources(memory_bytes: int = 512 * 1024 * 1024) -> None:
     """Limita la memoria del proceso cuando el sistema lo permite."""
     try:
         import resource
     except ImportError:
         # Windows no tiene resource; queda el timeout del proceso padre.
         return
-    memory = 512 * 1024 * 1024
-    resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+    resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
 
 
-def _check(expression: str) -> str:
+def check_expression(expression: str) -> str:
     """Valida la expresión contra la lista blanca y la normaliza."""
     expression = str(expression).strip()
     for symbol, replacement in UNICODE_REPLACEMENTS.items():
@@ -65,7 +64,7 @@ def _check(expression: str) -> str:
     return expression
 
 
-def _parse(expression: str):
+def parse_expression(expression: str):
     """Convierte una expresión validada en un objeto de SymPy."""
     import sympy
     from sympy.parsing.sympy_parser import (
@@ -94,7 +93,7 @@ def _parse(expression: str):
         function_exponentiation,
     )
     return parse_expr(
-        _check(expression),
+        check_expression(expression),
         local_dict=namespace,
         global_dict=global_namespace,
         transformations=transformations,
@@ -126,8 +125,8 @@ def _equation(text: str):
         raise ValueError("Cada ecuación debe tener un solo '='.")
     if "=" in text:
         left, right = text.split("=")
-        return sympy.Eq(_parse(left), _parse(right))
-    return _parse(text)
+        return sympy.Eq(parse_expression(left), parse_expression(right))
+    return parse_expression(text)
 
 
 def _inequality(text: str):
@@ -138,7 +137,7 @@ def _inequality(text: str):
     if len(parts) != 3:
         raise ValueError("Cada desigualdad debe tener un solo <, >, <= o >=.")
     left, operator, right = parts
-    return sympy.Rel(_parse(left), _parse(right), operator)
+    return sympy.Rel(parse_expression(left), parse_expression(right), operator)
 
 
 def _real(expression):
@@ -156,7 +155,7 @@ def _variables(text: str | None) -> list:
 
     if not text:
         return []
-    return [sympy.Symbol(_check(name)) for name in _split_top_level(str(text))]
+    return [sympy.Symbol(check_expression(name)) for name in _split_top_level(str(text))]
 
 
 def _format_set(result, symbol) -> str:
@@ -293,7 +292,7 @@ def _matrix(rows):
         raise ValueError("Todas las filas de la matriz deben tener el mismo largo.")
     if len(rows) > MATRIX_MAX_SIZE or len(rows[0]) > MATRIX_MAX_SIZE:
         raise ValueError(f"La matriz admite hasta {MATRIX_MAX_SIZE}x{MATRIX_MAX_SIZE}.")
-    return sympy.Matrix([[_parse(str(cell)) for cell in row] for row in rows])
+    return sympy.Matrix([[parse_expression(str(cell)) for cell in row] for row in rows])
 
 
 def _run_matrix(operation: str, rows) -> dict:
@@ -332,27 +331,27 @@ def run(request: dict) -> dict:
     variable = variables[0] if variables else None
 
     if operation == "simplify":
-        result = sympy.simplify(_real(_parse(expression)))
+        result = sympy.simplify(_real(parse_expression(expression)))
     elif operation == "expand":
-        result = sympy.expand(_parse(expression))
+        result = sympy.expand(parse_expression(expression))
     elif operation == "factor":
-        result = sympy.factor(_parse(expression))
+        result = sympy.factor(parse_expression(expression))
     elif operation == "diff":
-        target = _parse(expression)
+        target = parse_expression(expression)
         result = sympy.diff(target, variable or _single_symbol(target), int(request.get("order") or 1))
     elif operation == "integrate":
-        target = _parse(expression)
+        target = parse_expression(expression)
         symbol = variable or _single_symbol(target)
         lower, upper = request.get("lower"), request.get("upper")
         if lower is not None and upper is not None:
-            result = sympy.integrate(target, (symbol, _parse(str(lower)), _parse(str(upper))))
+            result = sympy.integrate(target, (symbol, parse_expression(str(lower)), parse_expression(str(upper))))
         else:
             result = sympy.integrate(target, symbol)
     elif operation == "limit":
         if request.get("point") is None:
             raise ValueError("limit necesita point (usa oo para infinito).")
-        target = _parse(expression)
-        result = _limit(target, variable or _single_symbol(target), _parse(str(request["point"])))
+        target = parse_expression(expression)
+        result = _limit(target, variable or _single_symbol(target), parse_expression(str(request["point"])))
         if isinstance(result, tuple):
             left, right = result
             return {
@@ -361,19 +360,19 @@ def run(request: dict) -> dict:
                          rf"{sympy.latex(right)} \text{{ por la derecha}}",
             }
     elif operation == "series":
-        target = _parse(expression)
+        target = parse_expression(expression)
         center = request.get("point")
         order = int(request.get("order") or SERIES_DEFAULT_ORDER)
         symbol = variable or _single_symbol(target)
-        result = sympy.series(target, symbol, _parse(str(center)) if center is not None else 0, order).removeO()
+        result = sympy.series(target, symbol, parse_expression(str(center)) if center is not None else 0, order).removeO()
     elif operation == "summation":
-        target = _parse(expression)
+        target = parse_expression(expression)
         lower, upper = request.get("lower"), request.get("upper")
         if lower is None or upper is None:
             raise ValueError("summation necesita lower y upper.")
-        result = sympy.summation(target, (variable or _single_symbol(target), _parse(str(lower)), _parse(str(upper))))
+        result = sympy.summation(target, (variable or _single_symbol(target), parse_expression(str(lower)), parse_expression(str(upper))))
     elif operation == "sample":
-        target = _parse(expression)
+        target = parse_expression(expression)
         return {"result": _sample(
             target,
             variable or _single_symbol(target),
@@ -382,12 +381,12 @@ def run(request: dict) -> dict:
             int(request["points"]),
         )}
     elif operation == "evaluate":
-        target = _parse(expression)
+        target = parse_expression(expression)
         substitutions = {}
         for assignment in _split_top_level(request.get("substitutions") or ""):
             if assignment.strip():
                 name, value = assignment.split("=")
-                substitutions[sympy.Symbol(_check(name))] = _parse(value)
+                substitutions[sympy.Symbol(check_expression(name))] = parse_expression(value)
         result = sympy.N(target.subs(substitutions), 12)
     else:
         raise ValueError(f"Operación no soportada: {operation}")
@@ -403,10 +402,11 @@ def _single_symbol(expression):
     return symbols[0]
 
 
-if __name__ == "__main__":
+def serve(handler, memory_bytes: int = 512 * 1024 * 1024) -> None:
+    """Lee la petición JSON de stdin, la ejecuta con el límite de memoria y escribe la respuesta."""
     try:
-        _limit_resources()
-        response = run(json.loads(sys.stdin.buffer.read().decode("utf-8")))
+        limit_resources(memory_bytes)
+        response = handler(json.loads(sys.stdin.buffer.read().decode("utf-8")))
     except ModuleNotFoundError as error:
         response = {"error": f"{error}. Inicia el backend con el Python de .venv o instala requirements.txt."}
     except Exception as error:
@@ -414,3 +414,7 @@ if __name__ == "__main__":
         response = {"error": f"{type(error).__name__}: {error}"}
     # Escribe bytes UTF-8 porque la codificación de stdout depende del sistema.
     sys.stdout.buffer.write(json.dumps(response, ensure_ascii=False).encode("utf-8"))
+
+
+if __name__ == "__main__":
+    serve(run)

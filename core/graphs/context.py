@@ -10,7 +10,7 @@ from langgraph.types import interrupt
 
 from core.chain import ChainBuilder
 from core.llm import build_model, model_for_turn, turn_models
-from core.agents.catalog import catalog_for_factory
+from core.agents.catalog import areas_for_factory, catalog_for_factory
 from core.prompts.context import CONTEXT_CLASSIFIER_PROMPT, STUDY_PLAN_JSON_RULES, STUDY_PLAN_PROMPT
 from core.schemas import ContextClassification, StudyPlan
 from core.states import ContextStudyState
@@ -78,7 +78,11 @@ class ContextStudyGraph:
                 native=resolved.get("supports_structured_output") is not False,
             )
 
-            response = await chain.ainvoke({"context": context, "catalog": catalog_for_factory()})
+            response = await chain.ainvoke({
+                "context": context,
+                "catalog": catalog_for_factory(),
+                "areas": areas_for_factory(),
+            })
             return {"study_plan": response}
 
 

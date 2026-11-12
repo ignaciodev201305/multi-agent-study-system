@@ -19,7 +19,15 @@ from core.agents.builder import (
     SupervisorBuilder,
     _subagent_tool,
 )
-from core.agents.catalog import ARCHETYPES, archetype_prompt, catalog_for_factory
+from core.agents.catalog import (
+    ARCHETYPES,
+    AREAS,
+    archetype_prompt,
+    area_notes,
+    area_tools,
+    areas_for_factory,
+    catalog_for_factory,
+)
 from core.board import MathBlock, add_block
 from core.prompts.context import STUDY_PLAN_PROMPT
 from core.prompts.session import MATH_VERIFY_RULE
@@ -96,6 +104,62 @@ class ToolNamesTests(unittest.TestCase):
     def test_evaluator_and_analyst_tools(self):
         self.assertIn("search_documents", ARCHETYPES["evaluador"].tools)
         self.assertIn("board_add", ARCHETYPES["analista_de_documentos"].tools)
+
+
+class AreaTests(unittest.TestCase):
+    def test_areas_only_use_registered_tools(self):
+        for area in AREAS.values():
+            self.assertLessEqual(set(area.tools), TOOL_NAMES, area.name)
+            self.assertIn(area.name, areas_for_factory())
+        self.assertIn("{areas}", STUDY_PLAN_PROMPT)
+
+    def test_plan_without_areas_is_still_valid(self):
+        plan = _plan()
+        self.assertEqual(plan.areas, [])
+        self.assertEqual(area_tools(plan.areas), ())
+        self.assertEqual(area_notes(plan.areas), "")
+
+    def test_plan_rejects_unknown_or_too_many_areas(self):
+        with self.assertRaises(ValidationError):
+            _plan(areas=["inventada"])
+        with self.assertRaises(ValidationError):
+            _plan(areas=["informatica"] * 3)
+        self.assertEqual(_plan(areas=["informatica", "informatica"]).areas, ["informatica"])
+
+    def test_area_adds_its_tools_to_supervisor_and_math_specialists(self):
+        plan = _plan(
+            areas=["informatica"],
+            archetypes=[
+                {"archetype": "explicador", "focus": "Álgebra de Boole."},
+                {"archetype": "analista_de_documentos", "focus": "Apuntes."},
+            ],
+        )
+        with (
+            patch("core.agents.builder.build_tools", return_value=[]) as build_tools,
+            patch("core.agents.builder.create_agent") as create_agent,
+            patch("core.agents.builder.build_model"),
+        ):
+            SupervisorBuilder(plan).build()
+        requested = [tuple(call.args[0]) for call in build_tools.call_args_list]
+        explainer, analyst, supervisor = requested
+        self.assertIn("logic", explainer)
+        self.assertNotIn("logic", analyst)
+        self.assertEqual(supervisor, (*SUPERVISOR_TOOLS, "logic"))
+        prompts = [call.kwargs["system_prompt"] for call in create_agent.call_args_list]
+        self.assertIn(AREAS["informatica"].note, prompts[0])
+        self.assertNotIn(AREAS["informatica"].note, prompts[1])
+        self.assertIn(AREAS["informatica"].note, prompts[2])
+
+    def test_plan_without_area_keeps_today_tools(self):
+        with (
+            patch("core.agents.builder.build_tools", return_value=[]) as build_tools,
+            patch("core.agents.builder.create_agent"),
+            patch("core.agents.builder.build_model"),
+        ):
+            SupervisorBuilder(_plan()).build()
+        requested = [tuple(call.args[0]) for call in build_tools.call_args_list]
+        self.assertEqual(requested[-1], SUPERVISOR_TOOLS)
+        self.assertEqual(requested[0], ARCHETYPES["explicador"].tools)
 
 
 class StudyPlanTests(unittest.TestCase):
@@ -246,7 +310,7 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
                 patch("core.agents.builder.build_tools", return_value=[]),
                 patch("core.agents.builder.create_agent") as create_agent,
             ):
-                _subagent_tool(archetype, "Foco.", {})
+                _subagent_tool(archetype, "Foco.", {}, [])
             prompt = create_agent.call_args.kwargs["system_prompt"]
             self.assertEqual(MATH_VERIFY_RULE in prompt, "math" in archetype.tools, name)
 

@@ -13,6 +13,8 @@ ArchetypeName = Literal[
     "tutor_de_codigo",
 ]
 
+AreaName = Literal["informatica"]
+
 
 class SelectedArchetype(BaseModel):
     """Arquetipo del catálogo elegido para la sesión, con su foco concreto."""
@@ -40,6 +42,17 @@ class StudyPlan(BaseModel):
         min_length=1,
         max_length=4,
     )
+    areas: List[AreaName] = Field(
+        default_factory=list,
+        description="De 0 a 2 áreas del catálogo; vacío si el tema no pertenece claramente a ninguna.",
+        max_length=2,
+    )
+
+    @field_validator("areas")
+    @classmethod
+    def _unique_areas(cls, areas):
+        """Descarta áreas repetidas conservando el orden."""
+        return list(dict.fromkeys(areas))
 
     @field_validator("archetypes")
     @classmethod
