@@ -47,6 +47,10 @@ async def lifespan(app: FastAPI):
             "Falta APP_TOKEN en el entorno (.env). Genera uno con "
             "'python -c \"import secrets; print(secrets.token_hex(32))\"' y configúralo también en el cliente."
         )
+    if settings.ALLOWED_EXTRA_ORIGINS and len(settings.APP_TOKEN) < settings.REMOTE_TOKEN_MIN_CHARS:
+        raise RuntimeError(
+            f"Con ALLOWED_EXTRA_ORIGINS, APP_TOKEN debe tener al menos {settings.REMOTE_TOKEN_MIN_CHARS} caracteres."
+        )
     app.state.session_registry = SessionRegistry()
     app.state.document_repository = await DocumentRepository.open(APP_DATABASE_PATH)
     app.state.progress_repository = await ProgressRepository.open(APP_DATABASE_PATH)

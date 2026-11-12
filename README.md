@@ -138,6 +138,7 @@ Archivos de la raíz:
 | `.dockerignore` | Excluye del contexto de build del backend el cliente, `.env`, `data/` y archivos locales. |
 | `.gitignore` | Excluye `.venv/`, `.env`, `__pycache__/` y `data/` del repositorio. |
 | `.env.example` | Plantilla de variables de entorno. |
+| `deploy/` | Acceso desde otros dispositivos: `Caddyfile` (proxy HTTPS de origen único) y las unidades systemd de usuario `estudio-backend.service` y `estudio-proxy.service`. |
 | `requirements.txt` | Dependencias de Python con versiones fijadas. |
 
 ## Configuración
@@ -154,7 +155,9 @@ cp .env.example .env
 | `TAVILY_API_KEY` | Clave de Tavily para la búsqueda web del clasificador de contexto y del arquetipo investigador. |
 | `APP_TOKEN` | Token local obligatorio. La API lo exige en HTTP (`Authorization: Bearer`) y en el WebSocket (subprotocolo `token.<APP_TOKEN>`); sin él no arranca. Genéralo con `python -c "import secrets; print(secrets.token_hex(32))"` La app de Electron lo lee de este `.env` cuando el backend es local; en el navegador o con un servidor remoto, pégalo en el campo «Token del servidor» de la pantalla de inicio. |
 
-Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `CHAT_MESSAGES_MAX_ENTRIES` (500), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `SUPERVISOR_RECURSION_LIMIT` (40), `DEEP_SUPERVISOR_RECURSION_LIMIT` (150), `DEEP_SUPERVISOR_MAX_MODEL_CALLS` (20), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8) y `BOARD_MAX_PLOT_FUNCTIONS` (4).
+Variables opcionales, con sus valores por defecto en `config/settings.py`: `DOCUMENT_WORKERS` (1), `DOCUMENT_MAX_ATTEMPTS` (3), `SESSION_STUDY_SUPERVISOR_CACHE_MAX_ENTRIES` (100), `CHAT_MESSAGES_MAX_ENTRIES` (500), `DOCLING_MAX_PAGES` (400), `DOCLING_TIMEOUT_SECONDS` (900), `DOCUMENT_SUMMARY_CHAR_BUDGET` (120000), `WS_MAX_MESSAGE_CHARS` (8000), `WS_MAX_TURNS_PER_MINUTE` (20), `MATH_TIMEOUT_SECONDS` (8), `SUPERVISOR_RECURSION_LIMIT` (40), `DEEP_SUPERVISOR_RECURSION_LIMIT` (150), `DEEP_SUPERVISOR_MAX_MODEL_CALLS` (20), `BOARD_MAX_BLOCKS` (60), `BOARD_MAX_BLOCK_CHARS` (8000), `BOARD_MAX_OPS_PER_TURN` (8), `BOARD_MAX_PLOT_FUNCTIONS` (4) y `AUTH_MAX_FAILURES_PER_MINUTE` (10).
+
+`ALLOWED_EXTRA_ORIGINS` agrega orígenes `https` exactos, separados por comas, para abrir el cliente web desde otro dispositivo (ver [Acceso desde el celular](#acceso-desde-el-celular)). Sin ella, la API solo acepta orígenes de esta máquina.
 
 Modelos por rol (`context_classifier`, `factory`, `supervisor`, `subagent_light`, `subagent_heavy`, `summarizer`): se cambian sin tocar código con `MODEL_<ROL>`, `TEMPERATURE_<ROL>` y `REASONING_<ROL>` (p. ej. `MODEL_SUPERVISOR=openai/gpt-5.5`). Lo elegido en la interfaz tiene prioridad sobre estas variables. Los embeddings con `MODEL_EMBEDDINGS`.
 
@@ -213,6 +216,51 @@ El cliente arranca aparte, con Electron o solo en el navegador: ver [client/READ
 **Migración:** las sesiones anteriores no se migran, tampoco las que el cliente guardaba en el `localStorage` del navegador: la nueva versión las descarta y empieza de cero. Si vienes de una versión con `context_study.db`, `session_study.db` o `document_processor.db`, limpia `data/` (con Docker, `docker compose down -v`) antes de arrancar.
 
 **Progreso anterior:** el progreso guardado antes en el checkpoint de cada sesión se ignora, porque sus temas no tenían número. La sesión sigue funcionando y el progreso se reconstruye con las evaluaciones nuevas. La pizarra y `topic_progress` no requieren migración: una sesión existente empieza con ambas vacías.
+
+## Acceso desde el celular
+
+El cliente web se puede abrir desde otro dispositivo de una red privada de ZeroTier. Un proxy Caddy sirve el cliente compilado, la API y el WebSocket desde un solo origen HTTPS y escucha solo en la IP de ZeroTier de la PC; el backend sigue en `127.0.0.1:8000` y la app de escritorio no cambia.
+
+| Ruta en `https://<IP_ZT>:8443` | Destino |
+|---|---|
+| `/api/*` | Backend en `127.0.0.1:8000`, sin el prefijo (HTTP y WebSocket `/api/ws/{thread_id}`). |
+| Resto | `client/dist`, con `index.html` como respaldo. |
+
+Preparación en Fedora, con `<IP_ZT>` como la IP de la PC en ZeroTier (`zerotier-cli listnetworks`):
+
+```bash
+sudo dnf install caddy
+(cd client && npm install && npm run build)
+mkdir -p ~/.config/estudio-multiagente ~/.config/systemd/user
+printf 'ZT_IP=<IP_ZT>
+REPO_DIR=%s
+' "$PWD" > ~/.config/estudio-multiagente/proxy.env
+cp deploy/estudio-backend.service deploy/estudio-proxy.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now estudio-backend estudio-proxy
+loginctl enable-linger "$USER"
+```
+
+- En `.env`, agrega `ALLOWED_EXTRA_ORIGINS=https://<IP_ZT>:8443`. Con esa variable el backend exige un `APP_TOKEN` de al menos 32 caracteres.
+- `estudio-backend.service` asume el repositorio en `~/multi-agent-study-system`; si está en otra carpeta, edita sus dos rutas. `enable-linger` deja los servicios activos sin sesión iniciada.
+- Si firewalld bloquea el puerto, ábrelo solo en la zona de la interfaz de ZeroTier: `sudo firewall-cmd --permanent --zone=<zona> --add-port=8443/tcp`.
+- Tras `git pull`, repite `npm run build` y `systemctl --user restart estudio-backend`.
+
+En el celular (Android):
+
+1. Copia `~/.local/share/caddy/pki/authorities/local/root.crt` al teléfono e instálalo en Ajustes → Seguridad → Cifrado y credenciales → Instalar un certificado → Certificado de CA. Android exige tener bloqueo de pantalla.
+2. Con ZeroTier conectado, abre `https://<IP_ZT>:8443` en Chrome.
+3. Escribe el `APP_TOKEN` en «Token del servidor». La dirección del backend ya apunta al mismo origen (`https://<IP_ZT>:8443/api`).
+
+Seguridad:
+
+- La red de ZeroTier debe ser privada, con cada miembro autorizado a mano. ZeroTier es el transporte; el token sigue siendo obligatorio.
+- El proxy escucha solo en la IP de ZeroTier, nunca en todas las interfaces, y no guarda log de accesos, porque incluiría la cabecera del WebSocket que lleva el token.
+- La clave de la CA local queda en `~/.local/share/caddy` de la PC. Quien la obtenga puede suplantar cualquier sitio ante los dispositivos que instalaron la raíz: no la copies a otro equipo.
+- Tras `AUTH_MAX_FAILURES_PER_MINUTE` intentos con un token inválido en un minuto, los siguientes reciben `429`. Un token válido siempre pasa.
+- El proxy envía una Content Security Policy que solo permite el propio origen y `cdn.jsdelivr.net` (Pyodide).
+
+Si la PC está apagada o ZeroTier desconectado, la pantalla de inicio lo indica y ofrece «Reintentar»; si el proxy responde pero el backend está detenido, también lo distingue.
 
 ## Tests
 

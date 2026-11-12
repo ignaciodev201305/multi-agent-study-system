@@ -24,7 +24,16 @@ import type {
   UsageTotals,
 } from '../types';
 
-const DEFAULT_BACKEND_URL = 'ws://127.0.0.1:8000';
+export const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+// Servido por el proxy desde otro host, el backend está en ese mismo origen bajo /api.
+const defaultBackendUrl = (): string => {
+  const { protocol, hostname, origin } = window.location;
+  const isWebPage = protocol === 'http:' || protocol === 'https:';
+  return isWebPage && !LOCAL_HOSTS.has(hostname) ? `${origin}/api` : 'ws://127.0.0.1:8000';
+};
+
+const DEFAULT_BACKEND_URL = defaultBackendUrl();
 export const DEFAULT_SIDE_PANEL_WIDTH = 348;
 const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
 const MAX_PYTHON_CODE_CHARS = 20_000;

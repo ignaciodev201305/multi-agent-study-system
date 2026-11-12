@@ -1,0 +1,15 @@
+# Unidad systemd de usuario: proxy HTTPS en la interfaz de ZeroTier. Copiar a ~/.config/systemd/user/.
+# ~/.config/estudio-multiagente/proxy.env define ZT_IP y REPO_DIR.
+[Unit]
+Description=Estudio Multiagente: proxy HTTPS
+After=network-online.target estudio-backend.service
+
+[Service]
+EnvironmentFile=%h/.config/estudio-multiagente/proxy.env
+ExecStart=/usr/bin/caddy run --config ${REPO_DIR}/deploy/Caddyfile --adapter caddyfile
+# Reintenta hasta que la interfaz de ZeroTier tenga su IP.
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

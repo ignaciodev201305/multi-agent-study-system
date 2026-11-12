@@ -18,6 +18,7 @@ from api.security import (
     TurnRateLimiter,
     is_valid_thread_id,
     token_matches,
+    too_many_auth_failures,
     websocket_token,
 )
 from config.settings import WS_MAX_MESSAGE_CHARS
@@ -431,7 +432,7 @@ async def websocket_endpoint(websocket: WebSocket, thread_id: str):
     if not token_matches(websocket_token(websocket.scope.get("subprotocols", []))):
         await websocket.close(
             code=status.WS_1008_POLICY_VIOLATION,
-            reason="unauthorized",
+            reason="too_many_attempts" if too_many_auth_failures() else "unauthorized",
         )
         return
 

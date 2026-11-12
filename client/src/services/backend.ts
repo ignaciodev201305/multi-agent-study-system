@@ -201,7 +201,13 @@ export const fetchChats = async (baseUrl: string): Promise<StudySession[]> => {
   try {
     response = await fetch(httpUrl(baseUrl, '/chats'), { cache: 'no-store', headers: authHeaders() });
   } catch {
-    throw new Error('No se pudo conectar con el backend.');
+    throw new Error('No se pudo llegar al backend. Comprueba que la PC esté encendida y, desde otro dispositivo, que ZeroTier esté conectado.');
+  }
+  if (response.status === 401) throw new Error('El backend rechazó el token. Revísalo en «Token del servidor».');
+  if (response.status === 429) throw new Error('Demasiados intentos con un token inválido. Espera un minuto y reintenta.');
+  // El proxy contesta 502–504 cuando no llega al backend.
+  if (response.status >= 502 && response.status <= 504) {
+    throw new Error('La PC responde, pero el backend está detenido. Revisa el servicio en la PC.');
   }
   const payload: unknown = await response.json().catch(() => null);
   if (!response.ok || !isRecord(payload) || !Array.isArray(payload.chats)) {

@@ -1,6 +1,7 @@
 """Configuración de modelos, límites y rutas usadas por los grafos del sistema."""
 
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -85,6 +86,25 @@ DOCUMENT_SUMMARY_CHAR_BUDGET = max(
 
 # Token local que comparten el backend y el cliente.
 APP_TOKEN = os.environ.get("APP_TOKEN", "").strip()
+# Largo mínimo del token cuando la API se publica fuera de esta máquina.
+REMOTE_TOKEN_MIN_CHARS = 32
+# Intentos fallidos de autenticación por minuto antes de responder 429.
+AUTH_MAX_FAILURES_PER_MINUTE = max(1, int(os.environ.get("AUTH_MAX_FAILURES_PER_MINUTE", "10")))
+
+
+def _extra_origins(value: str) -> tuple[str, ...]:
+    """Lee orígenes https exactos separados por comas; rechaza comodines y rutas."""
+    origins = tuple(origin.strip() for origin in value.split(",") if origin.strip())
+    for origin in origins:
+        if re.fullmatch(r"https://[A-Za-z0-9.\-]+(:\d{1,5})?", origin) is None:
+            raise RuntimeError(
+                f"ALLOWED_EXTRA_ORIGINS admite solo orígenes https exactos, sin ruta ni comodines: {origin}"
+            )
+    return origins
+
+
+# Orígenes adicionales del cliente web, p. ej. el proxy HTTPS de la red ZeroTier.
+ALLOWED_EXTRA_ORIGINS = _extra_origins(os.environ.get("ALLOWED_EXTRA_ORIGINS", ""))
 # Límites del WebSocket para acotar el costo.
 WS_MAX_MESSAGE_CHARS = max(1, int(os.environ.get("WS_MAX_MESSAGE_CHARS", "8000")))
 WS_MAX_TURNS_PER_MINUTE = max(1, int(os.environ.get("WS_MAX_TURNS_PER_MINUTE", "20")))

@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
 
 from config import settings
-from config.settings import MAX_PDF_SIZE_BYTES, WS_MAX_TURNS_PER_MINUTE
+from config.settings import AUTH_MAX_FAILURES_PER_MINUTE, MAX_PDF_SIZE_BYTES, WS_MAX_TURNS_PER_MINUTE
 
 THREAD_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,100}")
 
@@ -63,11 +63,17 @@ class TokenAuthMiddleware:
         authorization = dict(scope.get("headers", [])).get(b"authorization", b"").decode("latin-1")
         scheme, _, candidate = authorization.partition(" ")
         if scheme.lower() != "bearer" or not token_matches(candidate.strip()):
-            response = JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Token inválido o ausente."},
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            if too_many_auth_failures():
+                response = JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={"detail": "Demasiados intentos fallidos. Espera un minuto."},
+                )
+            else:
+                response = JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"detail": "Token inválido o ausente."},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             await response(scope, receive, send)
             return
 
@@ -96,6 +102,21 @@ class TurnRateLimiter:
     def forget(self, thread_id: str) -> None:
         """Olvida los turnos registrados de una sesión."""
         self._turns.pop(thread_id, None)
+
+
+# Global y no por IP: detrás del proxy todas las peticiones llegan desde loopback.
+_AUTH_FAILURES_KEY = "auth"
+_auth_failures = TurnRateLimiter(max_turns=AUTH_MAX_FAILURES_PER_MINUTE)
+
+
+def too_many_auth_failures() -> bool:
+    """Registra un intento fallido e indica si se superó el tope de la ventana."""
+    return not _auth_failures.allow(_AUTH_FAILURES_KEY)
+
+
+def reset_auth_failures() -> None:
+    """Olvida los intentos fallidos registrados."""
+    _auth_failures.forget(_AUTH_FAILURES_KEY)
 
 
 UPLOAD_MULTIPART_OVERHEAD_BYTES = 64 * 1024

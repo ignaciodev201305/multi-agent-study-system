@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
 import { SessionView } from './components/SessionView';
 import { WelcomeView } from './components/WelcomeView';
-import { useStudyStore } from './store/useStudyStore';
+import { LOCAL_HOSTS, useStudyStore } from './store/useStudyStore';
 import styles from './App.module.css';
 import type { Board, ChatMessage, GraphActivity } from './types';
 
 const EMPTY_GRAPH_ACTIVITIES: GraphActivity[] = [];
 const EMPTY_MESSAGES: ChatMessage[] = [];
 const EMPTY_BOARD: Board = { blocks: [], revision: 0 };
-const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 // Evita una consulta por tecla al escribir la dirección o el token.
 const SESSIONS_RELOAD_DELAY_MS = 400;
 

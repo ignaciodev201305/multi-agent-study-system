@@ -183,7 +183,7 @@ export function WelcomeView({
 
           {sessionsStatus === 'error' ? (
             <div className={styles.emptyState}>
-              <p>No se pudo conectar con el backend.</p>
+              <p>No se pudieron cargar las sesiones.</p>
               {sessionsError && <span>{sessionsError}</span>}
               <button className={styles.themeButton} onClick={onRetryLoad} type="button">Reintentar</button>
             </div>

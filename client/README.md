@@ -42,7 +42,7 @@ O úsala en el navegador, sin Electron, y abre `http://127.0.0.1:5173`:
 npx vite --host 127.0.0.1
 ```
 
-La aplicación usa por defecto `ws://127.0.0.1:8000/ws/{thread_id}`. La dirección base se puede cambiar en la pantalla de inicio, en el campo «Backend WebSocket». El servidor debe estar disponible antes de enviar el primer mensaje.
+La aplicación usa por defecto `ws://127.0.0.1:8000/ws/{thread_id}`. Si la página se sirve por HTTP o HTTPS desde otro host (el proxy de [Acceso desde el celular](../README.md#acceso-desde-el-celular)), usa su propio origen con el prefijo `/api`. La dirección base se puede cambiar en la pantalla de inicio, en el campo «Backend WebSocket». El servidor debe estar disponible antes de enviar el primer mensaje.
 
 ## Token
 
@@ -136,7 +136,7 @@ No hay Content Security Policy en `index.html`, `nginx.conf` ni Electron. Si se 
 
 La lista de sesiones, los mensajes y la cantidad de documentos vienen del servidor (`GET /chats` y `GET /chats/{id}/messages`); el `localStorage` guarda solo las preferencias: sesión activa, tema, dirección y token del backend, estado de los paneles y el código de Python. Por eso una sesión se ve igual desde otro navegador o dispositivo. Las sesiones que una versión anterior guardó en el navegador no se migran: se descartan al actualizar.
 
-- La lista se carga al iniciar, al volver al inicio y después de cada evento que cierra un turno. Sin backend, la pantalla de inicio muestra «No se pudo conectar con el backend» con un botón «Reintentar»; no hay caché sin conexión.
+- La lista se carga al iniciar, al volver al inicio y después de cada evento que cierra un turno. Si falla, la pantalla de inicio muestra «No se pudieron cargar las sesiones» con el motivo (no se llegó al backend, el proxy responde pero el backend está detenido, o el token fue rechazado) y un botón «Reintentar»; no hay caché de sesiones sin conexión.
 - Una sesión nueva existe solo en el cliente hasta su primer mensaje; el backend la crea en ese primer turno.
 - Al enviar se muestra el mensaje del usuario al instante, y con `human_input_request`, `context_processed` y `agent_response` se muestra el contenido recibido. Enseguida se pide `GET /chats/{id}/messages`, y la lista del servidor reemplaza a la local sin mezclarla.
 - El panel «Material» pide los documentos con `GET /chats/{id}/pdfs` al abrirse y después de subir uno; el contador sale de esa lista.
