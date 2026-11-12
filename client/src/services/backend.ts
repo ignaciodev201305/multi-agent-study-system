@@ -412,6 +412,8 @@ const isBoardBlock = (value: unknown): value is BoardBlock => {
         && Array.isArray(value.functions)
         && value.functions.every((item) => isRecord(item)
           && typeof item.expression === 'string' && Array.isArray(item.points));
+    case 'diagram':
+      return typeof value.mermaid === 'string';
     case 'chart':
       return Array.isArray(value.series) && value.series.length > 0
         && value.series.every((item) => isRecord(item)

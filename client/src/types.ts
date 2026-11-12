@@ -95,6 +95,7 @@ export type BoardBlockContent =
     vlines?: number[];
   }
   | { kind: 'chart'; series: ChartSeries[]; x_label?: string; y_label?: string }
+  | { kind: 'diagram'; mermaid: string }
   | { kind: 'exercise'; statement: string; hints?: string[]; solution: string };
 
 export type BoardBlock = BoardBlockContent & {

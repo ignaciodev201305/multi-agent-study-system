@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { BoardBlock as BoardBlockData } from '../../types';
 import { MarkdownMessage } from '../MarkdownMessage';
 import { CodeBlock } from './CodeBlock';
+import { DiagramBlock } from './DiagramBlock';
 import { ExerciseBlock } from './ExerciseBlock';
 import { PlotBlock } from './PlotBlock';
 import styles from '../../App.module.css';
@@ -72,6 +73,8 @@ function BlockContent({ block, onOpenInPython, onAskTutor }: BlockContentProps):
     case 'plot':
     case 'chart':
       return <PlotBlock block={block} title={block.title} />;
+    case 'diagram':
+      return <DiagramBlock source={block.mermaid} title={block.title} />;
     case 'exercise':
       return <ExerciseBlock block={block} blockId={block.id} onAskTutor={onAskTutor} />;
   }

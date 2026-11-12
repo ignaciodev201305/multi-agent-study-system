@@ -31,6 +31,7 @@ const kindText: Record<BoardBlockData['kind'], string> = {
   code: 'Código',
   plot: 'Gráficos',
   chart: 'Gráficos de datos',
+  diagram: 'Diagramas',
   exercise: 'Ejercicios',
 };
 

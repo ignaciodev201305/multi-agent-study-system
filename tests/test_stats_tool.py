@@ -1,4 +1,4 @@
-"""Pruebas de la tool stats y del bloque chart que deja en la pizarra."""
+"""Pruebas de la tool stats y de los bloques chart y diagram de la pizarra."""
 
 import json
 import unittest
@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from pydantic import ValidationError
 
-from core.board import Board, BoardError, ChartBlock, add_block, block_details
+from core.board import Board, BoardError, ChartBlock, DiagramBlock, add_block, block_details
 from core.tools import TurnContext
 from core.tools import stats
 from core.tools.board import board_add
@@ -142,7 +142,32 @@ class ChartBlockTests(unittest.TestCase):
 
     def test_chart_is_not_part_of_board_add_schema(self):
         schema = json.dumps(board_add.tool_call_schema.model_json_schema())
-        self.assertNotIn("chart", schema)
+        self.assertNotIn("ChartBlock", schema)
+
+
+class DiagramBlockTests(unittest.IsolatedAsyncioTestCase):
+    SOURCE = "flowchart TD\n  A[Inicio] --> B[Fin]"
+
+    async def test_board_add_accepts_a_diagram(self):
+        runtime = _Runtime()
+        result = await board_add.coroutine(
+            block=DiagramBlock(kind="diagram", mermaid=self.SOURCE), title="Flujo", runtime=runtime,
+        )
+        self.assertIn("b1", result)
+        self.assertEqual(runtime.context.board.blocks[0]["mermaid"], self.SOURCE)
+        repeated = await board_add.coroutine(block=DiagramBlock(kind="diagram", mermaid=self.SOURCE), runtime=runtime)
+        self.assertIn("ya está en la pizarra", repeated)
+
+    def test_diagram_limits(self):
+        for mermaid in ("", "x" * 4001):
+            with self.subTest(size=len(mermaid)), self.assertRaises(ValidationError):
+                DiagramBlock(kind="diagram", mermaid=mermaid)
+        with self.assertRaises(ValidationError):
+            DiagramBlock(kind="diagram", mermaid=self.SOURCE, html="<b>")
+
+    def test_board_add_schema_documents_the_diagram(self):
+        self.assertIn("diagram", json.dumps(board_add.tool_call_schema.model_json_schema()))
+        self.assertIn("Mermaid", board_add.description)
 
 
 if __name__ == "__main__":

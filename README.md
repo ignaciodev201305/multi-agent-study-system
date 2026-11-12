@@ -13,11 +13,12 @@ Los PDFs se procesan en segundo plano: la subida responde con estado `queued` y 
 
 ### Pizarra
 
-Es un espacio persistente junto al chat para lo que el alumno consultará después: fórmulas, pasos, tablas, código y gráficos. Solo escribe el agente: el profesor principal usa `board_add`, `board_edit` y `get_board`, y los especialistas `explicador`, `entrenador_de_ejercicios`, `evaluador` y `tutor_de_codigo` usan `board_add`. Cada bloque guarda su autor.
+Es un espacio persistente junto al chat para lo que el alumno consultará después: fórmulas, pasos, tablas, código, gráficos y diagramas. Solo escribe el agente: el profesor principal usa `board_add`, `board_edit` y `get_board`, y los especialistas `explicador`, `entrenador_de_ejercicios`, `evaluador` y `tutor_de_codigo` usan `board_add`. Cada bloque guarda su autor.
 
 - Los cambios llegan en vivo por el evento `board_patch` y se guardan en el checkpoint de la sesión al terminar el turno. Si el turno falla, la pizarra vuelve a su estado anterior.
 - Los gráficos se muestrean en el servidor con la tool `math`: las expresiones pasan por su lista blanca y el cliente solo dibuja los puntos. No hay zoom interactivo.
 - Los gráficos de datos (bloque `chart`: líneas, puntos o barras, hasta 4 series de 300 puntos) los crean solo las tools de cálculo, como `stats`; no están en el schema de `board_add`, así que no encarecen los turnos que no los usan.
+- Los diagramas (bloque `diagram`) llevan texto Mermaid de hasta 4000 caracteres: diagramas de flujo, de clases, de secuencia, de estados y entidad-relación. El servidor solo guarda el texto y el cliente lo dibuja.
 - Un bloque con el mismo contenido que otro se rechaza, y cada especialista le informa al profesor principal qué agregó para que no lo repita.
 - Los límites se configuran con las variables `BOARD_*`. Los puntos de un gráfico no cuentan para `BOARD_MAX_BLOCK_CHARS`.
 

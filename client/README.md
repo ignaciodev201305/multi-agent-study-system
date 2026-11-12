@@ -141,6 +141,16 @@ El cambio aplica desde el mensaje siguiente. El cliente solo habla con el backen
 
 Los mensajes y los bloques de la pizarra se renderizan como Markdown con `remark-math` y `rehype-katex`: `$...$` para matemática en línea y `$$...$$` en bloque. Los bloques `math` reciben LaTeX sin delimitadores.
 
+## Diagramas
+
+Los bloques `diagram` de la pizarra se dibujan con [Mermaid](https://mermaid.js.org/). La librería se descarga con `import()` solo cuando aparece el primer diagrama, así no pesa en el arranque.
+
+- Se inicializa con `securityLevel: 'strict'` y sin etiquetas HTML, y el texto se valida con `mermaid.parse` antes de dibujarlo.
+- El SVG resultante se muestra como `<img>` con una URL `data:`, sin `dangerouslySetInnerHTML`: como imagen no puede ejecutar scripts ni tocar la página.
+- Si el texto no es Mermaid válido, el bloque muestra ese texto tal cual.
+- Un toque o clic alterna entre ajustar el diagrama al ancho y verlo a tamaño real con desplazamiento, útil en el celular.
+- La exportación a Markdown lo deja como bloque ```` ```mermaid ````.
+
 ## Python con Pyodide
 
 El código corre en un Web Worker (`src/services/pythonWorker.ts`), administrado desde `src/services/pythonRunner.ts`.

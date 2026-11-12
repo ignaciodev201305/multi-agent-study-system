@@ -16,6 +16,7 @@ MAX_TITLE_CHARS = 120
 MAX_PLOT_MARKS = 12
 MAX_EXERCISE_HINTS = 5
 MAX_CHART_SERIES = 4
+MAX_DIAGRAM_CHARS = 4000
 MAX_CHART_POINTS = 300
 # Bloques más recientes que el supervisor y los especialistas ven en su contexto.
 BOARD_CONTEXT_MAX_ENTRIES = 20
@@ -119,6 +120,12 @@ class ExerciseBlock(_BoardModel):
     solution: str = Field(min_length=1)
 
 
+class DiagramBlock(_BoardModel):
+    """Diagrama en texto Mermaid; lo dibuja el cliente."""
+    kind: Literal["diagram"]
+    mermaid: str = Field(min_length=1, max_length=MAX_DIAGRAM_CHARS)
+
+
 class ChartSeries(_BoardModel):
     """Serie de puntos [x, y] ya calculados."""
     label: str | None = None
@@ -135,7 +142,7 @@ class ChartBlock(_BoardModel):
 
 
 BoardBlock = Annotated[
-    MarkdownBlock | MathBlock | StepsBlock | TableBlock | CodeBlock | PlotBlock | ExerciseBlock,
+    MarkdownBlock | MathBlock | StepsBlock | TableBlock | CodeBlock | PlotBlock | ExerciseBlock | DiagramBlock,
     Field(discriminator="kind"),
 ]
 

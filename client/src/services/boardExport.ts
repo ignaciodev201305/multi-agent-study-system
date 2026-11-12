@@ -44,6 +44,8 @@ export const blockMarkdown = (block: BoardBlock): string => {
         .join('\n');
       return `Gráfico en x entre ${block.x_min} y ${block.x_max}:\n\n${functions}${marks ? `\n\nPuntos:\n\n${marks}` : ''}`;
     }
+    case 'diagram':
+      return fenced('mermaid', block.mermaid);
     case 'chart': {
       const axes = [block.x_label, block.y_label].filter(Boolean).join(' / ');
       const series = block.series

@@ -247,6 +247,12 @@
 .plotMark { fill: var(--text); stroke: var(--surface); stroke-width: 1.5; }
 .plotMarkLabel { fill: var(--text); font-size: 10px; }
 .plotLine { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
+.diagram { display: block; width: 100%; border: 0; padding: 0; background: transparent; color: inherit; cursor: zoom-in; overflow: auto; text-align: center; }
+.diagram img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.diagram[data-zoomed] { cursor: zoom-out; }
+.diagram[data-zoomed] img { max-width: none; }
+.diagramNote { margin: 0 0 6px; color: var(--muted); font-size: 11px; }
+.diagramSource { margin: 0; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 10px; background: var(--sidebar); font-family: "IBM Plex Mono", monospace; font-size: 11px; line-height: 1.6; text-align: left; }
 .plotScatter { stroke: var(--surface); stroke-width: 1; }
 .plotBar { opacity: .85; }
 .plotAxisLabel { fill: var(--muted); font-size: 10px; }

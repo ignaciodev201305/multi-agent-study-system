@@ -89,6 +89,8 @@ async def board_add(
       vlines?: lista de valores de x para marcar asíntotas.
     - exercise: statement, hints? (lista de hasta 5 pistas graduadas) y solution.
       El alumno ve el enunciado y abre pistas y solución cuando quiere; no los repitas en el chat.
+    - diagram: mermaid, el texto de un diagrama Mermaid (flowchart, classDiagram, sequenceDiagram,
+      stateDiagram-v2, erDiagram); sin HTML en las etiquetas.
     title: título corto del bloque.
     topic_number: número del tema en el TEMARIO, para agrupar el bloque; omítelo si no aplica.
     replace_id: id de un bloque existente para corregirlo en vez de agregar otro; sin title
