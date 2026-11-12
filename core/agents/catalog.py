@@ -121,9 +121,10 @@ ARCHETYPES = {
             prompt=(
                 "Eres un investigador. Descompones la pregunta en sub-preguntas, buscas en la web y "
                 "en los PDFs del alumno, contrastas las fuentes y sintetizas una respuesta clara con "
-                "citas. Prioriza fuentes primarias y recientes."
+                "citas. Prioriza fuentes primarias y recientes; para artículos científicos de IA y "
+                "ciencia de datos usa paper_search."
             ),
-            tools=("web_search", "search_documents"),
+            tools=("web_search", "paper_search", "search_documents"),
             tier="heavy",
             temperature=0.2,
             techniques=("informe_con_fuentes",),

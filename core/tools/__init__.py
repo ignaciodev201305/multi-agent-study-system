@@ -6,11 +6,12 @@ from core.tools.documents import get_study_material, search_documents
 from core.tools.logic import logic_tool
 from core.tools.progress import record_progress
 from core.tools.symbolic import math_tool
-from core.tools.web import build_web_search_tool
+from core.tools.web import build_web_search_tool, paper_search
 
 _STATIC_TOOLS = {
     "math": math_tool,
     "logic": logic_tool,
+    "paper_search": paper_search,
     "search_documents": search_documents,
     "get_study_material": get_study_material,
     "record_progress": record_progress,

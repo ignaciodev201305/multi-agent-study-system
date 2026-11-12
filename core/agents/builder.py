@@ -43,7 +43,7 @@ SUPERVISOR_TOOLS = (
     "get_board",
 )
 # Solo lectura: el general-purpose no ve la conversación, así que no escribe pizarra ni progreso.
-DEEP_RESEARCH_TOOLS = ("math", "search_documents", "get_study_material", "web_search")
+DEEP_RESEARCH_TOOLS = ("math", "search_documents", "get_study_material", "web_search", "paper_search")
 DEEP_RESEARCH_DESCRIPTION = (
     "Investiga o calcula una parte del problema en un contexto aparte y devuelve un informe. "
     "No ve la conversación ni escribe en la pizarra: pásale una tarea autocontenida."
