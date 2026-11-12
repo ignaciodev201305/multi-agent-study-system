@@ -156,7 +156,9 @@
 .phaseLabel[data-status='error'] { color: var(--danger); }
 .themeButton { border: 1px solid transparent; border-radius: 5px; padding: 6px 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; white-space: nowrap; }
 .themeButton:hover { border-color: var(--border); color: var(--text); }
-.topbarActions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.topbarActions { position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.topbarSecondary { display: flex; align-items: center; gap: 4px; }
+.topbarMore, .mobileNav, .menuBackdrop { display: none; }
 @container (max-width: 640px) {
   .phaseLabel, .usageContext, .usageBar { display: none; }
   .topbar { padding-right: 12px; padding-left: 12px; }
@@ -444,19 +446,28 @@
   .workspace { min-width: 0; }
   .topbar { height: calc(55px + env(safe-area-inset-top)); flex-basis: calc(55px + env(safe-area-inset-top)); gap: 6px; padding: env(safe-area-inset-top) 10px 0; }
   .topbarLeft { flex: 1 1 96px; }
-  .topbarActions { min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }
+  .topbarPanelToggle { display: none; }
+  .topbarMore { display: grid; font-size: 20px; line-height: 1; }
+  .topbarSecondary { display: none; }
+  .menuBackdrop { position: fixed; z-index: 8; inset: 0; display: block; }
+  .topbarSecondary[data-open] { position: absolute; z-index: 8; top: calc(100% + 6px); right: 0; display: flex; min-width: 190px; flex-direction: column; align-items: stretch; gap: 2px; border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px; background: var(--elevated); box-shadow: 0 10px 26px rgba(0, 0, 0, .3); }
+  .topbarSecondary[data-open] button { text-align: left; }
+  .appShell { --mobile-nav-height: calc(54px + env(safe-area-inset-bottom)); }
+  .workspace { padding-bottom: var(--mobile-nav-height); }
+  .mobileNav { position: absolute; z-index: 7; right: 0; bottom: 0; left: 0; display: grid; height: var(--mobile-nav-height); grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); background: var(--sidebar); }
+  .mobileNav button { border: 0; border-top: 2px solid transparent; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; }
+  .mobileNav button[aria-pressed='true'] { border-top-color: var(--accent); color: var(--text); font-weight: 600; }
   .phaseLabel { display: none; }
-  .docsPanel { position: absolute; z-index: 6; inset: 0; padding-top: calc(15px + env(safe-area-inset-top)); padding-bottom: calc(14px + env(safe-area-inset-bottom)); border-right: 0; transition: none; }
+  .docsPanel { position: absolute; z-index: 6; inset: 0 0 var(--mobile-nav-height); padding-top: calc(15px + env(safe-area-inset-top)); border-right: 0; transition: none; }
   .docsPanel[data-closed] { display: none; }
-  .studyPanel, .appShell[data-docs-closed] .studyPanel, .appShell[data-focused] .studyPanel { position: absolute; z-index: 5; inset: 0; width: 100%; min-width: 0; border-left: 0; box-shadow: none; }
+  .studyPanel, .appShell[data-docs-closed] .studyPanel, .appShell[data-focused] .studyPanel { position: absolute; z-index: 5; inset: 0 0 var(--mobile-nav-height); width: 100%; min-width: 0; border-left: 0; box-shadow: none; }
   .appShell[data-focused] .workspace { flex: 1; }
   .studyPanelHeader { height: calc(55px + env(safe-area-inset-top)); flex-basis: calc(55px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
-  .studyPanelBody { padding-bottom: env(safe-area-inset-bottom); }
   .panelResizer { display: none; }
   .messageColumn { width: min(100% - 28px, 740px); padding-top: 18px; }
   .welcomePanel { width: min(100% - 28px, 670px); }
   .messageUser { max-width: 92%; }
-  .composerWrap { width: min(100% - 20px, 760px); padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .composerWrap { width: min(100% - 20px, 760px); padding-bottom: 10px; }
   .modelDialog { max-height: calc(100dvh - 24px); }
 }
 

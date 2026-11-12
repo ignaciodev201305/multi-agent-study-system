@@ -97,6 +97,7 @@ export function SessionView({
 }: SessionViewProps): JSX.Element {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState(false);
   const [focusRequest, setFocusRequest] = useState<BlockFocus | null>(null);
   const [documents, setDocuments] = useState<BackendDocument[]>([]);
@@ -157,14 +158,30 @@ export function SessionView({
             </div>
           </div>
           <div className={styles.topbarActions}>
-            <UsageIndicator onOpen={() => setUsageOpen(true)} usage={usage} />
-            <button className={styles.themeButton} onClick={() => setModelsOpen(true)} type="button">
-              Modelos
+            <button
+              aria-expanded={menuOpen}
+              aria-label="Más opciones"
+              className={`${styles.iconButton} ${styles.topbarMore}`}
+              onClick={() => setMenuOpen(!menuOpen)}
+              type="button"
+            >
+              ⋯
             </button>
+            {menuOpen && <div aria-hidden="true" className={styles.menuBackdrop} onClick={() => setMenuOpen(false)} />}
+            {/* En pantalla angosta es un menú; cualquier toque dentro o fuera lo cierra. */}
+            <div className={styles.topbarSecondary} data-open={menuOpen ? true : undefined} onClick={() => setMenuOpen(false)}>
+              <UsageIndicator onOpen={() => setUsageOpen(true)} usage={usage} />
+              <button className={styles.themeButton} onClick={() => setModelsOpen(true)} type="button">
+                Modelos
+              </button>
+              <button className={styles.themeButton} onClick={onToggleTheme} type="button">
+                {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
+              </button>
+            </div>
             {!focused && (
               <button
                 aria-expanded={docsPanelOpen}
-                className={styles.themeButton}
+                className={`${styles.themeButton} ${styles.topbarPanelToggle}`}
                 onClick={() => onDocsPanelOpenChange(!docsPanelOpen)}
                 type="button"
               >
@@ -173,14 +190,11 @@ export function SessionView({
             )}
             <button
               aria-expanded={sidePanelOpen}
-              className={styles.themeButton}
+              className={`${styles.themeButton} ${styles.topbarPanelToggle}`}
               onClick={() => onSidePanelOpenChange(!sidePanelOpen)}
               type="button"
             >
               Pizarra{board.blocks.length > 0 ? ` (${board.blocks.length})` : ''}
-            </button>
-            <button className={styles.themeButton} onClick={onToggleTheme} type="button">
-              {theme === 'dark' ? 'Tema claro' : 'Tema oscuro'}
             </button>
           </div>
         </header>
@@ -230,6 +244,38 @@ export function SessionView({
           width={sidePanelWidth}
         />
       )}
+      <nav aria-label="Secciones de la sesión" className={styles.mobileNav}>
+        <button
+          aria-pressed={!docsPanelOpen && !sidePanelOpen}
+          onClick={() => {
+            onDocsPanelOpenChange(false);
+            onSidePanelOpenChange(false);
+          }}
+          type="button"
+        >
+          Chat
+        </button>
+        <button
+          aria-pressed={sidePanelOpen}
+          onClick={() => {
+            onDocsPanelOpenChange(false);
+            onSidePanelOpenChange(true);
+          }}
+          type="button"
+        >
+          Pizarra{board.blocks.length > 0 ? ` (${board.blocks.length})` : ''}
+        </button>
+        <button
+          aria-pressed={docsPanelOpen && !sidePanelOpen}
+          onClick={() => {
+            onSidePanelOpenChange(false);
+            onDocsPanelOpenChange(true);
+          }}
+          type="button"
+        >
+          Material{documents.length > 0 ? ` (${documents.length})` : ''}
+        </button>
+      </nav>
       {usageOpen && (
         <UsagePanel backendUrl={backendUrl} onClose={() => setUsageOpen(false)} sessionId={session.id} usage={usage} />
       )}

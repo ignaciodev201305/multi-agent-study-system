@@ -110,7 +110,8 @@ La pantalla de inicio agrega «Para repasar hoy» con los repasos vencidos de `G
 
 Por debajo de 760 px la sesión usa una sola columna, pensada para el celular:
 
-- «Material» y el panel lateral se abren como capas a pantalla completa y empiezan cerrados; la barra superior se desplaza en horizontal si no caben sus botones.
+- Una barra inferior fija cambia entre Chat, Pizarra y Material con un toque; «Material» y el panel lateral se abren como capas completas y empiezan cerrados.
+- La barra superior deja solo volver, el título y un botón «⋯» que abre un menú con el uso, «Modelos» y el tema.
 - La altura sigue al teclado en pantalla (`100dvh` e `interactive-widget=resizes-content`) y se respeta el área segura (`env(safe-area-inset-*)`).
 - Sin puntero fino (`pointer: coarse`), los botones miden al menos 38–44 px, el cuadro de mensaje usa 16 px y Enter inserta un salto de línea: se envía con el botón.
 - Sin hover, el botón de borrar sesión queda siempre visible.
